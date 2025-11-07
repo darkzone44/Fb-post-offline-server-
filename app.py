@@ -4,7 +4,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 import time
 
-# ---- Neon Theme ----
 st.markdown(
     """
     <style>
@@ -23,7 +22,6 @@ st.markdown(
 
 st.markdown('<div class="neon-label">SYSTEM CONSOLE <span style="color:#0f0">● ACTIVE</span></div>', unsafe_allow_html=True)
 
-# --- Configuration ---
 with st.container():
     st.markdown('<div class="config-box"><b>Your Configuration</b></div>', unsafe_allow_html=True)
     fb_user = st.text_input("Facebook Username/Email")
@@ -32,7 +30,6 @@ with st.container():
     delay = st.slider("Delay seconds", 5,60,12)
     msg = st.text_area("Enter Message")
 
-# --- Automation Controls ---
 st.markdown('<div class="config-box"><b>Automation Control</b></div>', unsafe_allow_html=True)
 col1, col2 = st.columns(2)
 run_bot = col1.button("▶ START E2EE")
@@ -62,7 +59,6 @@ def send_e2ee_message(fb_user, fb_pass, chat_id, msg, delay, console):
         driver.get(url)
         time.sleep(5)
 
-        # Try multiple selectors for message input
         selectors = [
             (By.CSS_SELECTOR, "div[role='textbox']"),
             (By.CSS_SELECTOR, "div[aria-label='Message']"),
@@ -90,7 +86,6 @@ def send_e2ee_message(fb_user, fb_pass, chat_id, msg, delay, console):
         time.sleep(1)
         input_box.send_keys(Keys.RETURN)
         logs.append(f"[AUTO] Message sent: {msg}")
-
         time.sleep(delay)
         driver.quit()
         logs.append("[AUTO] Browser closed.")
