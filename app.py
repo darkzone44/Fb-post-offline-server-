@@ -77,7 +77,7 @@ def send_e2ee_message(fb_user, fb_pass, chat_id, msg, delay, console):
         if not input_box:
             logs.append("[ERROR] Message input not found! FB layout update ho sakta hai.")
             driver.quit()
-            # FIX: logs join
+            # FIX: join strings correctly
             console.markdown('<div class="console">' + "
 ".join(logs) + '</div>', unsafe_allow_html=True)
             return
@@ -95,7 +95,7 @@ def send_e2ee_message(fb_user, fb_pass, chat_id, msg, delay, console):
         logs.append(f"[ERROR] {str(e)}")
         driver.quit()
 
-    # FIX: logs join
+    # FIX: join strings correctly
     console.markdown('<div class="console">' + "
 ".join(logs) + '</div>', unsafe_allow_html=True)
 
