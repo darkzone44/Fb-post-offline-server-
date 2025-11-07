@@ -4,8 +4,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 import time
 
-st.markdown(
-    """
+st.markdown("""
     <style>
         .main {background-color: #111;}
         div.stButton > button {
@@ -17,8 +16,7 @@ st.markdown(
         .neon-label { font-size:22px; color:#00ffa3; font-family:monospace; margin-bottom:5px; }
         .config-box {background: #0a2127; border-radius: 10px; box-shadow: 0 0 10px #19fbffb3; padding: 15px; margin: 8px 0;}
     </style>
-    """, unsafe_allow_html=True
-)
+    """, unsafe_allow_html=True)
 
 st.markdown('<div class="neon-label">SYSTEM CONSOLE <span style="color:#0f0">● ACTIVE</span></div>', unsafe_allow_html=True)
 
