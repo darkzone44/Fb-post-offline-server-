@@ -1,2 +1,2 @@
-streamlit
-selenium
+streamlit==1.24.0
+selenium==4.11.2
