@@ -1,6 +1,7 @@
 streamlit==1.33.0
 selenium==4.11.2
 pillow==10.4.0
+playwright
 requests
 websocket-client
 undetected-chromedriver
