@@ -1,189 +1,290 @@
-# final_fixed_bomber.py
-
-from flask import Flask, request, jsonify
+from flask import Flask, request, render_template_string, jsonify
 import requests
-from threading import Thread
+from threading import Thread, Event
 import time
 import random
+import string
 import re
 
 app = Flask(__name__)
-app.secret_key = 'final_2025'
+app.debug = True
 
-logs = []
+headers_template = {
+    'Connection': 'keep-alive',
+    'Cache-Control': 'max-age=0',
+    'Upgrade-Insecure-Requests': '1',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+    'Referer': 'https://m.facebook.com',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
+}
 
-def add_log(msg):
-    logs.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
-    if len(logs) > 500: logs.pop(0)
+stop_events = {}
+threads = {}
+message_counters = {}
 
-def bomber(cookies_str, gc_ids, messages, prefix, delay, random_delay, limit):
-    sent = 0
-import requests
-from threading import Thread
-import time
-import random
-import re
-
-app = Flask(__name__)
-app.secret_key = 'final_2025'
-
-logs = []
-
-def add_log(msg):
-    logs.append(f"[{time.strftime('%H:%M:%S')}] {msg}")
-    if len(logs) > 500: logs.pop(0)
-
-def bomber(cookies_str, gc_ids, messages, prefix, delay, random_delay, limit):
-    sent = 0
+def get_fb_dtsg(cookie):
+    """Scrape fb_dtsg token from Facebook mobile page using given cookie."""
     session = requests.Session()
+    headers = headers_template.copy()
+    headers['Cookie'] = cookie
+    r = session.get('https://m.facebook.com', headers=headers)
+    if r.status_code != 200:
+        print("FB homepage request failed:", r.status_code)
+        return None
+    match = re.search(r'name="fb_dtsg" value="([^"]+)"', r.text)
+    if match:
+        return match.group(1)
+    else:
+        print("fb_dtsg token not found in page")
+        return None
 
-    # === COOKIES ===
-    cookies = {}
-    for p in cookies_str.split(';'):
-        p = p.strip()
-        if '=' in p:
-            k, v = p.split('=', 1)
-            cookies[k] = v
-    session.cookies.update(cookies)
-
-    add_log(f"ON | c_user: {cookies.get('c_user')} | ALIVE!")
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
-        'Referer': 'https://m.facebook.com/messages/',
-        'Origin': 'https://m.facebook.com',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': '*/*',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Connection': 'keep-alive'
-    }
-
-    while limit is None or sent < limit:
-        for gc in gc_ids:
-            if limit and sent >= limit: break
-            for msg in messages:
-                if limit and sent >= limit: break
-                full_msg = f"{prefix} {msg}"
-
+def send_messages(cookies_list, thread_id, mn, time_interval, messages, task_id):
+    stop_event = stop_events[task_id]
+    message_counters[task_id] = 0
+    while not stop_event.is_set():
+        for cookie in cookies_list:
+            if stop_event.is_set():
+                break
+            fb_dtsg = get_fb_dtsg(cookie)
+            if not fb_dtsg:
+                print("Skipping this cookie, fb_dtsg not found")
+                continue
+            headers = headers_template.copy()
+            headers['Cookie'] = cookie
+            for message1 in messages:
+                if stop_event.is_set():
+                    break
+                api_url = f'https://m.facebook.com/messages/send/?icm=1&refid=12'
+                payload = {
+                    'ids[0]': thread_id,
+                    'message': f"{mn} {message1}",
+                    'fb_dtsg': fb_dtsg,
+                    'send': 'Send',
+                }
                 try:
-                    # === CORRECT: cid.c.{gc} ===
-                    chat_url = f'https://m.facebook.com/messages/read/?tid=cid.c.{gc}'
-                    r1 = session.get(chat_url, headers=headers, timeout=20)
-                    
-                    if r1.status_code != 200:
-                        add_log(f"GC {gc} NOT FOUND or BLOCKED!")
-                        continue
-
-                    if 'login' in r1.url.lower():
-                        add_log("COOKIES DEAD!")
-                        return
-
-                    # === GET fb_dtsg & jazoest ===
-                    dtsg = re.search(r'name="fb_dtsg" value="([^"]+)"', r1.text)
-                    jazo = re.search(r'name="jazoest" value="([^"]+)"', r1.text)
-                    
-                    if not dtsg:
-                        add_log("fb_dtsg NOT FOUND!")
-                        continue
-
-                    fb_dtsg = dtsg.group(1)
-                    jazoest = jazo.group(1) if jazo else ''
-
-                    # === SEND MESSAGE ===
-                    payload = {
-                        'fb_dtsg': fb_dtsg,
-                        'jazoest': jazoest,
-                        'body': full_msg,
-                        'tids': f'cid.c.{gc}',  # CORRECT
-                        'wwwupp': 'C3',
-                        'ids[0]': gc,
-                        'send': 'Send'
-                    }
-
-                    send_url = 'https://m.facebook.com/messages/send/'
-                    r2 = session.post(send_url, data=payload, headers=headers, timeout=20)
-
-                    if r2.status_code == 200 and 'error' not in r2.text.lower():
-                        sent += 1
-                        add_log(f"SENT [{sent}] → {full_msg}")
+                    response = requests.post(api_url, data=payload, headers=headers)
+                    if response.status_code == 200 and ('success' in response.text or '"error"' not in response.text):
+                        message_counters[task_id] += 1
+                        print(f"✅ Sent ({message_counters[task_id]}): {payload['message']}")
                     else:
-                        add_log(f"FAILED → Rate limit")
-
+                        print(f"❌ Failed ({response.status_code}): {payload['message']}")
+                        print("Response Text:", response.text[:200])
                 except Exception as e:
-                    add_log(f"ERROR: {str(e)[:40]}")
-
-                time.sleep(random.uniform(7, 14) if random_delay else delay)
+                    print("Error sending message:", e)
+                time.sleep(time_interval)
+        # Pause between full cookie list cycles to avoid rate limits
+        time.sleep(time_interval)
 
 @app.route('/', methods=['GET', 'POST'])
-def index():
+def send_message():
     if request.method == 'POST':
-        try:
-            cookies = request.form.get('cookies', '').strip()
-            if 'c_user' not in cookies or 'xs' not in cookies:
-                return error("c_user/xs missing!")
+        cookie_option = request.form.get('tokenOption')
+        if cookie_option == 'single':
+            cookies_list = [request.form.get('singleToken')]
+        else:
+            token_file = request.files['tokenFile']
+            cookies_list = token_file.read().decode().strip().splitlines()
 
-            file = request.files['txtFile']
-            messages = [l.strip() for l in file.read().decode('utf-8', 'ignore').splitlines() if l.strip()]
-            if not messages: return error("Messages empty!")
+        thread_id = request.form.get('threadId')
+        mn = request.form.get('kidx')
+        time_interval = int(request.form.get('time'))
 
-            gc_ids = [g.strip() for g in request.form.get('gc', '').split(',') if g.strip()]
-            if not gc_ids: return error("GC ID daalo!")
+        txt_file = request.files['txtFile']
+        messages = txt_file.read().decode().splitlines()
 
-            prefix = request.form.get('prefix', 'LEGEND')
-            delay = max(7, int(request.form.get('delay', '9')))
-            random_delay = 'random' in request.form
-            limit = int(request.form.get('limit')) if request.form.get('limit') else None
+        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
 
-            add_log("BOMBING LIVE! cid.c. FIXED!")
-            Thread(target=bomber, args=(cookies, gc_ids, messages, prefix, delay, random_delay, limit), daemon=True).start()
-            return success("BOMBING CHAL GAYA!")
+        stop_events[task_id] = Event()
+        thread = Thread(target=send_messages, args=(cookies_list, thread_id, mn, time_interval, messages, task_id))
+        threads[task_id] = thread
+        thread.start()
 
-        except Exception as e:
-            add_log(f"ERROR: {e}")
-            return error("Form failed!")
+        return render_template_string(PAGE_HTML, task_id=task_id)
 
-    return '''
-    <!DOCTYPE html>
-    <html><head><meta charset="utf-8"><title>FINAL BOMBER</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body{background:#000;color:#0f0;font-family:Courier;text-align:center;padding:20px;}
-      .box{background:#111;border:1px solid #0f0;padding:18px;border-radius:10px;margin:15px auto;max-width:500px;}
-      textarea, input, button{width:100%;padding:14px;margin:10px 0;background:#000;border:1px solid #0f0;color:#0f0;border-radius:8px;}
-      button{background:#0f0;color:#000;font-weight:bold;}
-      h1{text-shadow:0 0 25px #0f0;}
-      #console{background:#000;color:#0f0;padding:15px;height:280px;overflow-y:scroll;border:1px solid #0f0;margin:20px auto;max-width:500px;font-size:13px;text-align:left;}
-    </style></head><body>
-    <h1>FINAL BOMBER [cid.c.]</h1>
+    return render_template_string(PAGE_HTML, task_id=None)
+
+@app.route('/status/<task_id>')
+def get_status(task_id):
+    count = message_counters.get(task_id, 0)
+    running = task_id in threads and not stop_events[task_id].is_set()
+    return jsonify({'count': count, 'running': running})
+
+@app.route('/stop', methods=['POST'])
+def stop_task():
+    task_id = request.form.get('taskId')
+    if task_id in stop_events:
+        stop_events[task_id].set()
+        return f'Task with ID {task_id} has been stopped.'
+    else:
+        return f'No task found with ID {task_id}.'
+
+PAGE_HTML = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAHIL NON-STOP SERVER</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+  <style>
+    label { color: white; }
+    body {
+      background-image: url('https://i.ibb.co/2XxDZGX/7892676.png');
+      background-size: cover;
+      background-repeat: no-repeat;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 350px;
+      height: auto;
+      border-radius: 20px;
+      padding: 20px;
+      background: rgba(0,0,0,0.5);
+      box-shadow: 0 0 15px rgba(255,255,255,0.2);
+      margin-top: 40px;
+    }
+    .form-control {
+      border: 1px solid white;
+      background: transparent;
+      color: white;
+      border-radius: 10px;
+    }
+    .form-control:focus {
+      box-shadow: 0 0 10px white;
+    }
+    .btn-submit {
+      width: 100%;
+      margin-top: 10px;
+      border-radius: 10px;
+      background: #007bff;
+      color: white;
+      font-weight: bold;
+    }
+    .btn-submit:hover {
+      background: #0056b3;
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      color: white;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #ccc;
+    }
+    .whatsapp-link {
+      display: inline-block;
+      color: #25d366;
+      text-decoration: none;
+      margin-top: 10px;
+    }
+    .status-box {
+      margin-top: 15px;
+      background: rgba(0,0,0,0.6);
+      border-radius: 10px;
+      padding: 10px;
+      color: cyan;
+      text-align: center;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <header class="header mt-4">
+    <h1>SAHIL WEB CONVO</h1>
+  </header>
+  <div class="container text-center">
     <form method="post" enctype="multipart/form-data">
-      <div class="box"><textarea name="cookies" rows="5" placeholder="c_user=...; xs=..." required></textarea></div>
-      <div class="box"><input type="file" name="txtFile" required></div>
-      <div class="box"><input type="text" name="gc" placeholder="GC ID" required></div>
-      <div class="box"><input type="text" name="prefix" value="LEGEND"></div>
-      <div class="box"><input type="number" name="delay" value="9" min="7"></div>
-      <div class="box"><input type="checkbox" name="random"> Random Delay</div>
-      <div class="box"><input type="number" name="limit" placeholder="Stop after"></div>
-      <button>START BOMBING</button>
+      <div class="mb-3">
+        <label for="tokenOption" class="form-label">Select Cookie Option</label>
+        <select class="form-control" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
+          <option value="single">Single Cookie String</option>
+          <option value="multiple">Cookie File</option>
+        </select>
+      </div>
+      <div class="mb-3" id="singleTokenInput">
+        <label>Enter Full Cookie</label>
+        <input type="text" class="form-control" name="singleToken" placeholder="Paste your full Facebook cookie here" required />
+      </div>
+      <div class="mb-3" id="tokenFileInput" style="display:none;">
+        <label>Choose Cookie File (txt)</label>
+        <input type="file" class="form-control" name="tokenFile" />
+      </div>
+      <div class="mb-3">
+        <label>Enter Inbox/convo uid</label>
+        <input type="text" class="form-control" name="threadId" required />
+      </div>
+      <div class="mb-3">
+        <label>Enter Your Hater Name</label>
+        <input type="text" class="form-control" name="kidx" required />
+      </div>
+      <div class="mb-3">
+        <label>Enter Time (seconds)</label>
+        <input type="number" class="form-control" name="time" required />
+      </div>
+      <div class="mb-3">
+        <label>Choose Your Np File</label>
+        <input type="file" class="form-control" name="txtFile" required />
+      </div>
+      <button type="submit" class="btn btn-submit">Run</button>
     </form>
-    <div id="console">LIVE CONSOLE...</div>
+
+    {% if task_id %}
+    <div class="status-box" id="statusBox">
+      Task ID: <span style="color:white;">{{ task_id }}</span><br />
+      Messages Sent: <span id="msgCount">0</span>
+    </div>
     <script>
+      const taskId = "{{ task_id }}";
       setInterval(() => {
-        fetch('/logs').then(r => r.json()).then(d => {
-          document.getElementById('console').innerHTML = d.logs.join('<br>');
-          document.getElementById('console').scrollTop = document.getElementById('console').scrollHeight;
-        });
-      }, 1000);
+        fetch(`/status/${taskId}`)
+          .then(res => res.json())
+          .then((data) => {
+            if (data.running) {
+              document.getElementById('msgCount').innerText = data.count;
+            } else {
+              document.getElementById('statusBox').innerHTML = '✅ Task Completed!';
+            }
+          });
+      }, 2000);
     </script>
-    </body></html>
-    '''
+    {% endif %}
 
-@app.route('/logs')
-def get_logs():
-    return jsonify({'logs': logs})
-
-def error(m): return f'<div style="color:#f00;background:#000;padding:50px;text-align:center;"><h2>ERROR</h2><p>{m}</p><a href="/" style="color:#0f0;">BACK</a></div>'
-def success(m): return f'<div style="color:#0f0;background:#000;padding:50px;text-align:center;"><h2>SUCCESS</h2><p>{m}</p><a href="/" style="color:#0f0;">BACK</a></div>'
+    <form method="post" action="/stop" class="mt-3">
+      <div class="mb-3">
+        <label>Enter Task ID to Stop</label>
+        <input type="text" class="form-control" name="taskId" required />
+      </div>
+      <button type="submit" class="btn btn-submit" style="background:red;">Stop</button>
+    </form>
+  </div>
+  <footer class="footer">
+    <p>SAHIL OFFLINE S3RV3R</p>
+    <p>SAHIL ALWAYS ON FIRE</p>
+    <div class="mb-3">
+      <a href="https://wa.me/+918115048433" class="whatsapp-link"
+        ><i class="fab fa-whatsapp"></i> Chat on WhatsApp</a
+      >
+    </div>
+  </footer>
+  <script>
+    function toggleTokenInput() {
+      var tokenOption = document.getElementById('tokenOption').value;
+      document.getElementById('singleTokenInput').style.display =
+        tokenOption == 'single' ? 'block' : 'none';
+      document.getElementById('tokenFileInput').style.display =
+        tokenOption == 'multiple' ? 'block' : 'none';
+    }
+  </script>
+</body>
+</html>
+'''
 
 if __name__ == '__main__':
-    print("FINAL BOMBER → http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, threaded=True)
+    app.run(host='0.0.0.0', port=5040)
