@@ -183,6 +183,4 @@ def error(m): return f'<div style="color:#f00;background:#000;padding:50px;text-
 def success(m): return f'<div style="color:#0f0;background:#000;padding:50px;text-align:center;"><h2>SUCCESS</h2><p>{m}</p><a href="/" style="color:#0f0;">BACK</a></div>'
 
 if __name__ == '__main__':
-    print("FINAL BOMBER → http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, threaded=True)
-            
+    app.run(host='0.0.0.0', port=5000)
