@@ -1,126 +1,182 @@
-import streamlit as st
+from flask import Flask, render_template_string, request
 import requests
+import threading
 import time
-import json
 
-# =============== UI SETUP ===============
+app = Flask(__name__)
 
-page_bg = """
+LOGS = []
+
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>REAL FB Message Sender</title>
 <style>
-  body {
-    background-image: url('https://i.imgur.com/eY1ZQqW.jpeg');
+body {
+    background: url('https://i.ibb.co/gS2j0yW/neon-bg.jpg');
     background-size: cover;
-    background-attachment: fixed;
-  }
-
-  .big-title {
-    font-size: 40px;
-    color: #00ffcc;
-    text-shadow: 0px 0px 20px #00fff2;
-    text-align: center;
-    font-weight: 900;
-  }
-
-  .box {
-    background: rgba(0,0,0,0.6);
-    padding: 20px;
-    border-radius: 15px;
-    border: 2px solid #00ffc3;
-    box-shadow: 0px 0px 15px #00ffe6;
-  }
-
-  .logbox {
-    background: rgba(0,0,0,0.6);
-    padding: 15px;
-    border-radius: 10px;
-    height: 250px;
-    overflow-y: auto;
-    border: 1px solid #00ffc8;
+    font-family: Arial;
     color: #00ffea;
-    font-size: 14px;
-  }
+    text-align: center;
+}
+.box {
+    width: 80%;
+    margin: auto;
+    padding: 20px;
+    border: 2px solid #00ffff;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+}
+input, textarea {
+    width: 90%;
+    padding: 10px;
+    margin: 10px;
+    border-radius: 8px;
+}
+button {
+    background: #00ffff;
+    padding: 10px 30px;
+    border: 0;
+    font-size: 18px;
+    border-radius: 10px;
+}
+#logs {
+    width: 90%;
+    height: 250px;
+    background: black;
+    color: #00ff00;
+    padding: 10px;
+    overflow-y: scroll;
+    margin-top: 20px;
+}
 </style>
+</head>
+<body>
+
+<h1>REAL Facebook Message Sender</h1>
+
+<div class="box">
+<h2>Cookies</h2>
+<textarea id="cookies" placeholder="Paste Cookies Here"></textarea>
+
+<h2>1. Inbox Message</h2>
+<input id="uid" placeholder="User ID">
+<textarea id="msg1" placeholder="Message"></textarea>
+
+<h2>2. Group Message</h2>
+<input id="thread" placeholder="Group Thread ID">
+<textarea id="msg2" placeholder="Message"></textarea>
+
+<button onclick="sendInbox()">Send Inbox</button>
+<button onclick="sendGroup()">Send Group</button>
+
+<h2>Live Logs</h2>
+<div id="logs"></div>
+</div>
+
+<script>
+function log(t){
+    document.getElementById("logs").innerHTML += t + "<br>";
+}
+
+function sendInbox(){
+    fetch("/send_inbox", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+            cookies:document.getElementById("cookies").value,
+            uid:document.getElementById("uid").value,
+            msg:document.getElementById("msg1").value
+        })
+    })
+    .then(r=>r.text())
+    .then(t=>log(t));
+}
+
+function sendGroup(){
+    fetch("/send_group", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+            cookies:document.getElementById("cookies").value,
+            thread:document.getElementById("thread").value,
+            msg:document.getElementById("msg2").value
+        })
+    })
+    .then(r=>r.text())
+    .then(t=>log(t));
+}
+
+setInterval(()=>{
+    fetch("/logs")
+    .then(r=>r.text())
+    .then(t=>{
+        document.getElementById("logs").innerHTML = t;
+    });
+},2000);
+</script>
+
+</body>
+</html>
 """
 
-st.markdown(page_bg, unsafe_allow_html=True)
-st.markdown("<div class='big-title'>🔥 REAL FACEBOOK MESSAGE SENDER (NON-E2EE) 🔥</div>", unsafe_allow_html=True)
-st.markdown("### *Group + Inbox दोनों में काम करेगा* 🚀")
+def add_log(t):
+    LOGS.append(t)
+    print(t)
 
-st.markdown("<div class='box'>", unsafe_allow_html=True)
-
-cookie_input = st.text_area("👉 अपनी Facebook Cookies Paste करें (c_user, xs, fr, fbl_st आदि)", height=120)
-rec_id = st.text_input("👉 Receiver ID / Group Thread ID डालें")
-msg = st.text_area("👉 Message लिखें", height=100)
-
-send_btn = st.button("🔥 SEND MESSAGE 🔥")
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-st.markdown("### 📡 Live Logs")
-log_window = st.empty()
-
-# =============== COOKIE PARSER ===============
-
-def cookie_to_dict(raw_cookie):
-    cookies = {}
+def send_real_message(cookies_raw, uid_or_thread, message, inbox=True):
     try:
-        parts = raw_cookie.split(";")
-        for p in parts:
-            if "=" in p:
-                key, val = p.strip().split("=", 1)
-                cookies[key] = val
-        return cookies
-    except:
-        return None
+        cookies = {}
+        for x in cookies_raw.split(";"):
+            if "=" in x:
+                k,v = x.strip().split("=",1)
+                cookies[k]=v
 
-# =============== MESSAGE SENDER ===============
+        url = "https://graph.facebook.com/v15.0/me/messages"
 
-def send_message(cookies, thread_id, text):
-    url = "https://www.facebook.com/api/graphql/"
+        data = {
+            "recipient":{
+                "id": uid_or_thread
+            },
+            "message":{
+                "text": message
+            }
+        }
 
-    payload = {
-        "av": cookies.get("c_user"),
-        "__aaid": cookies.get("c_user"),
-        "batch_name": "MessengerSendMessageMutation",
-        "variables": json.dumps({
-            "message": {"text": text},
-            "client_mutation_id": "1",
-            "actor_id": cookies.get("c_user"),
-            "recipient_id": thread_id
-        }),
-        "doc_id": "5301165566584771"
-    }
+        add_log("Sending...")
+        r = requests.post(url, cookies=cookies, json=data)
 
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-
-    return requests.post(url, data=payload, cookies=cookies, headers=headers)
-
-# =============== BUTTON CLICK ===============
-
-if send_btn:
-    if cookie_input.strip() == "" or rec_id.strip() == "" or msg.strip() == "":
-        st.error("❌ सभी बॉक्स भरना जरूरी है!")
-    else:
-        cookies = cookie_to_dict(cookie_input)
-
-        if not cookies:
-            st.error("❌ Cookies गलत हैं!")
+        if r.status_code == 200:
+            add_log("✔ Sent Successfully!")
         else:
-            log_window.write("🔄 Sending message...")
-            try:
-                res = send_message(cookies, rec_id, msg)
+            add_log("✖ Failed: " + r.text)
 
-                if "errors" in res.text or res.status_code != 200:
-                    log_window.write("❌ Message send failed!")
-                    log_window.write(res.text)
-                else:
-                    log_window.write("✅ Message Sent Successfully!")
-                    log_window.write(res.text[:500])
+    except Exception as e:
+        add_log("Error: " + str(e))
 
-            except Exception as e:
-                log_window.write("❌ ERROR:")
-                log_window.write(str(e))
-                
+
+@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+@app.route("/send_inbox", methods=["POST"])
+def send_inbox():
+    d = request.json
+    threading.Thread(target=send_real_message, args=(d["cookies"], d["uid"], d["msg"], True)).start()
+    return "Inbox Sending Started..."
+
+@app.route("/send_group", methods=["POST"])
+def send_group():
+    d = request.json
+    threading.Thread(target=send_real_message, args=(d["cookies"], d["thread"], d["msg"], False)).start()
+    return "Group Sending Started..."
+
+@app.route("/logs")
+def logs():
+    return "<br>".join(LOGS[-50:])
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
+  
