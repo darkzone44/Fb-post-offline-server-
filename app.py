@@ -133,7 +133,7 @@ PAGE_HTML = '''
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SAHIL NON-STOP SERVER - COOKIE TOKEN</title>
+  <title> NON-STOP SERVER - COOKIE TOKEN</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
   <style>
@@ -216,7 +216,7 @@ PAGE_HTML = '''
 </head>
 <body>
   <header class="header mt-4">
-    <h1><i class="fas fa-robot"></i> SAHIL WEB CONVO</h1>
+    <h1><i class="fas fa-robot"></i>AYUSH WEB CONVO</h1>
     <h5>Cookie से Auto Token Generator 🔥</h5>
   </header>
   
