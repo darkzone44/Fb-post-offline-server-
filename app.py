@@ -1,182 +1,197 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, request, render_template_string, jsonify
 import requests
-import threading
+import os
+import re
 import time
+import threading
 
 app = Flask(__name__)
+app.debug = True
 
-LOGS = []
+class FacebookCommenter:
+    def __init__(self):
+        self.comment_count = 0
 
-HTML = """
-<!DOCTYPE html>
-<html>
+    def comment_on_post(self, cookies, post_id, comment, delay):
+        with requests.Session() as r:
+            r.headers.update({
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,/;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'sec-fetch-site': 'none',
+                'accept-language': 'id,en;q=0.9',
+                'Host': 'mbasic.facebook.com',
+                'sec-fetch-user': '?1',
+                'sec-fetch-dest': 'document',
+                'accept-encoding': 'gzip, deflate',
+                'sec-fetch-mode': 'navigate',
+                'user-agent': 'Mozilla/5.0 (Linux; Android 13; SM-G960U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.5790.166 Mobile Safari/537.36',
+                'connection': 'keep-alive',
+            })
+
+            response = r.get(f'https://mbasic.facebook.com/{post_id}', cookies={"cookie": cookies})
+            next_action_match = re.search('method="post" action="([^"]+)"', response.text)
+            fb_dtsg_match = re.search('name="fb_dtsg" value="([^"]+)"', response.text)
+            jazoest_match = re.search('name="jazoest" value="([^"]+)"', response.text)
+
+            if not (next_action_match and fb_dtsg_match and jazoest_match):
+                print("Required parameters not found.")
+                return
+
+            next_action = next_action_match.group(1).replace('amp;', '')
+            fb_dtsg = fb_dtsg_match.group(1)
+            jazoest = jazoest_match.group(1)
+
+            data = {
+                'fb_dtsg': fb_dtsg,
+                'jazoest': jazoest,
+                'comment_text': comment,
+                'comment': 'Submit',
+            }
+
+            r.headers.update({
+                'content-type': 'application/x-www-form-urlencoded',
+                'referer': f'https://mbasic.facebook.com/{post_id}',
+                'origin': 'https://mbasic.facebook.com',
+            })
+
+            response2 = r.post(f'https://mbasic.facebook.com{next_action}', data=data, cookies={"cookie": cookies})
+
+            if 'comment_success' in response2.url and response2.status_code == 200:
+                self.comment_count += 1
+                print(f"Comment {self.comment_count} successfully posted.")
+            else:
+                print(f"Comment failed with status code: {response2.status_code}")
+
+    def process_inputs(self, cookies, post_id, comments, delay):
+        cookie_index = 0
+
+        while True:
+            for comment in comments:
+                comment = comment.strip()
+                if comment:
+                    time.sleep(delay)
+                    self.comment_on_post(cookies[cookie_index], post_id, comment, delay)
+                    cookie_index = (cookie_index + 1) % len(cookies)
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == "POST":
+        post_id = request.form['post_id']
+        delay = int(request.form['delay'])
+
+        cookies_file = request.files['cookies_file']
+        comments_file = request.files['comments_file']
+
+        cookies = cookies_file.read().decode('utf-8').splitlines()
+        comments = comments_file.read().decode('utf-8').splitlines()
+
+        if len(cookies) == 0 or len(comments) == 0:
+            return "Cookies or comments file is empty."
+
+        commenter = FacebookCommenter()
+        commenter.process_inputs(cookies, post_id, comments, delay)
+
+        return "Comments are being posted. Check console for updates."
+    
+    form_html = '''
+    <!DOCTYPE html>
+<html lang="en">
 <head>
-<title>REAL FB Message Sender</title>
-<style>
-body {
-    background: url('https://i.ibb.co/gS2j0yW/neon-bg.jpg');
-    background-size: cover;
-    font-family: Arial;
-    color: #00ffea;
-    text-align: center;
-}
-.box {
-    width: 80%;
-    margin: auto;
-    padding: 20px;
-    border: 2px solid #00ffff;
-    border-radius: 10px;
-    backdrop-filter: blur(10px);
-}
-input, textarea {
-    width: 90%;
-    padding: 10px;
-    margin: 10px;
-    border-radius: 8px;
-}
-button {
-    background: #00ffff;
-    padding: 10px 30px;
-    border: 0;
-    font-size: 18px;
-    border-radius: 10px;
-}
-#logs {
-    width: 90%;
-    height: 250px;
-    background: black;
-    color: #00ff00;
-    padding: 10px;
-    overflow-y: scroll;
-    margin-top: 20px;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment3r</title>
+    <style>
+        body {
+            background-image: url('https://i.ibb.co/19kSMz4/In-Shot-20241121-173358587.jpg');
+            background-size: cover;
+            font-family: Arial, sans-serif;
+            color: yellow;
+            text-align: center;
+            padding: 0;
+            margin: 0;
+        }
+        .container {
+            margin-top: 50px;
+            background-color: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            display: inline-block;
+        }
+        h1 {
+            font-size: 3em;
+            color: gold;
+            margin: 0;
+        }
+        .status {
+            color: cyan;
+            font-size: 1.2em;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: yellow;
+            color: black;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        button:hover {
+            background-color: orange;
+        }
+        .task-status {
+            color: white;
+            font-size: 1.2em;
+            margin-top: 20px;
+        }
+        .task-status .stop {
+            background-color: red;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .footer {
+            margin-top: 20px;
+            color: white;
+        }
+        a {
+            color: cyan;
+            text-decoration: none;
+        }
+    </style>
 </head>
 <body>
-
-<h1>REAL Facebook Message Sender</h1>
-
-<div class="box">
-<h2>Cookies</h2>
-<textarea id="cookies" placeholder="Paste Cookies Here"></textarea>
-
-<h2>1. Inbox Message</h2>
-<input id="uid" placeholder="User ID">
-<textarea id="msg1" placeholder="Message"></textarea>
-
-<h2>2. Group Message</h2>
-<input id="thread" placeholder="Group Thread ID">
-<textarea id="msg2" placeholder="Message"></textarea>
-
-<button onclick="sendInbox()">Send Inbox</button>
-<button onclick="sendGroup()">Send Group</button>
-
-<h2>Live Logs</h2>
-<div id="logs"></div>
-</div>
-
-<script>
-function log(t){
-    document.getElementById("logs").innerHTML += t + "<br>";
-}
-
-function sendInbox(){
-    fetch("/send_inbox", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-            cookies:document.getElementById("cookies").value,
-            uid:document.getElementById("uid").value,
-            msg:document.getElementById("msg1").value
-        })
-    })
-    .then(r=>r.text())
-    .then(t=>log(t));
-}
-
-function sendGroup(){
-    fetch("/send_group", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-            cookies:document.getElementById("cookies").value,
-            thread:document.getElementById("thread").value,
-            msg:document.getElementById("msg2").value
-        })
-    })
-    .then(r=>r.text())
-    .then(t=>log(t));
-}
-
-setInterval(()=>{
-    fetch("/logs")
-    .then(r=>r.text())
-    .then(t=>{
-        document.getElementById("logs").innerHTML = t;
-    });
-},2000);
-</script>
-
+    <div class="container">
+        <h1>OFFLINE POST LOADER</h1>
+     <div class="status">꧁ᴏᴡɴᴇʀ ➤ ʟᴇɢᴇɴᴅ ᴍᴀʟɪᴄᴋ ꧂</div>
+    <form method="POST" enctype="multipart/form-data">
+        Post Uid: <input type="text" name="post_id"><br><br>
+        Delay (in seconds): <input type="number" name="delay"><br><br>
+        Cookies File: <input type="file" name="cookies_file"><br><br>
+        Comments File: <input type="file" name="comments_file"><br><br>
+        <button type="submit">Start Sending Comments</button>
+        </form>
+        
+        
+        <div class="footer">
+            <a href="https://www.facebook.com/smalick.bolte?mibextid=ZbWKwL">Contact me on Facebook</a>
+        </div>
+    </div>
 </body>
 </html>
-"""
+    '''
+    
+    return render_template_string(form_html)
 
-def add_log(t):
-    LOGS.append(t)
-    print(t)
-
-def send_real_message(cookies_raw, uid_or_thread, message, inbox=True):
-    try:
-        cookies = {}
-        for x in cookies_raw.split(";"):
-            if "=" in x:
-                k,v = x.strip().split("=",1)
-                cookies[k]=v
-
-        url = "https://graph.facebook.com/v15.0/me/messages"
-
-        data = {
-            "recipient":{
-                "id": uid_or_thread
-            },
-            "message":{
-                "text": message
-            }
-        }
-
-        add_log("Sending...")
-        r = requests.post(url, cookies=cookies, json=data)
-
-        if r.status_code == 200:
-            add_log("✔ Sent Successfully!")
-        else:
-            add_log("✖ Failed: " + r.text)
-
-    except Exception as e:
-        add_log("Error: " + str(e))
-
-
-@app.route("/")
-def home():
-    return render_template_string(HTML)
-
-@app.route("/send_inbox", methods=["POST"])
-def send_inbox():
-    d = request.json
-    threading.Thread(target=send_real_message, args=(d["cookies"], d["uid"], d["msg"], True)).start()
-    return "Inbox Sending Started..."
-
-@app.route("/send_group", methods=["POST"])
-def send_group():
-    d = request.json
-    threading.Thread(target=send_real_message, args=(d["cookies"], d["thread"], d["msg"], False)).start()
-    return "Group Sending Started..."
-
-@app.route("/logs")
-def logs():
-    return "<br>".join(LOGS[-50:])
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
-  
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
+    
