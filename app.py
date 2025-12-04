@@ -9,28 +9,22 @@ def clear():
     os.system('clear')
 
 def banner():
-    print("""\u001B[1;32m
-=============================================
+    print("\u001B[1;32m=============================================
    FACEBOOK API LOGIN TOOL (100% WORKING)
    (Get EAAAA Token & Cookies via API)
-=============================================\u001B[0m""")
+=============================================\u001B[0m")
 
 def convert_cookie_to_string(session_cookies):
-    # API se milne wali cookies ko string banata hai
     cookie_str = ""
     for cookie in session_cookies:
         cookie_str += f"{cookie['name']}={cookie['value']};"
     return cookie_str
 
 def login_with_api(email, password):
-    # Yeh wo API URL hai jo Facebook ki purani Android Apps use karti hain
     url = "https://b-graph.facebook.com/auth/login"
-    
-    # Fake Device ID generate karna taake FB ko shaq na ho
     adid = str(uuid.uuid4())
     device_id = str(uuid.uuid4())
     
-    # Official Facebook Android App ke parameters
     payload = {
         'adid': adid,
         'email': email,
@@ -54,11 +48,10 @@ def login_with_api(email, password):
         'method': 'auth.login',
         'fb_api_req_friendly_name': 'authenticate',
         'fb_api_caller_class': 'com.facebook.account.login.protocol.Fb4aAuthHandler',
-        'api_key': '882a8490361da98702bf97a021ddc14d', # Official FB API Key
-        'access_token': '350685531728|62f8ce9f74b12f84c123cc23437a4a32' # Generic App Token
+        'api_key': '882a8490361da98702bf97a021ddc14d',
+        'access_token': '350685531728|62f8ce9f74b12f84c123cc23437a4a32'
     }
     
-    # Official User Agent (Bohot Zaroori hai)
     headers = {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 10; SM-G960F Build/QP1A.190711.020) [FBAN/Orca-Android;FBAV/241.0.0.17.116;FBPN/com.facebook.orca;FBLC/en_US;FBBV/196328325;FBCR/null;FBMF/samsung;FBBD/samsung;FBDV/SM-G960F;FBSV/10;FBCA/arm64-v8a:null;FBDM/{density=3.0,width=1080,height=2220};FB_FW/1;]',
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -76,17 +69,15 @@ def login_with_api(email, password):
         response = requests.post(url, data=payload, headers=headers)
         data = response.json()
         
-        # === SUCCESS CASE ===
         if 'access_token' in data:
             token = data['access_token']
             cookies = ""
             if 'session_cookies' in data:
                 cookies = convert_cookie_to_string(data['session_cookies'])
-                # Save to file
                 with open("fb_pro_data.txt", "w") as f:
-                    f.write(f"Token: {token}
+                    f.write("Token: " + token + "
 
-Cookie: {cookies}")
+Cookie: " + cookies)
             
             return {
                 'success': True,
@@ -96,7 +87,6 @@ Cookie: {cookies}")
                 'saved': 'Data fb_pro_data.txt mein save ho gaya.'
             }
             
-        # === ERROR CASES ===
         elif 'error' in data:
             error_msg = data['error'].get('message', 'Unknown Error')
             error_data = data['error'].get('error_data', '')
@@ -456,18 +446,6 @@ def login():
     result = login_with_api(email, password)
     return jsonify(result)
 
-def main():
-    clear()
-    banner()
-    
-    print("
-[NOTE] 2-Factor Auth (OTP) wale accounts par ye work nahi karega.")
-    print("       Normal password wale accounts use karein.
-")
-    print("       Flask Web Server: http://localhost:5000")
-    print("       Ya Termux/Android me: http://0.0.0.0:5000")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
-
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
