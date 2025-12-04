@@ -1,5 +1,6 @@
-# app.py - Minimal clean black design, no heavy animation, simple smooth UI
-# Suitable for low-performance or distraction-free use, focus on clarity & usability
+# app.py - Clean but visually pleasant design with subtle dark gradients and distinct colors
+# No heavy animation, just smooth layering of dark backgrounds + distinct input/button colors
+# Color-coded inputs and legends for clarity, neat subtle backgrounds 
 
 from flask import Flask, request, jsonify, render_template_string, send_from_directory, redirect, url_for
 from werkzeug.utils import secure_filename
@@ -23,7 +24,7 @@ bot_status = {
 def bot_simulator():
     while bot_status["running"]:
         time.sleep(3)
-        log = f"[{time.strftime('%H:%M:%S')}] Bot is running, active users: {bot_status['active_users']}"
+        log = f"[{time.strftime('%H:%M:%S')}] Bot is active | Users: {bot_status['active_users']}"
         bot_status['logs'].append(log)
         if len(bot_status['logs']) > 50:
             bot_status['logs'].pop(0)
@@ -35,9 +36,9 @@ HTML = r'''
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>YK TRICKS INDIA - Clean Bot Panel</title>
+  <title>YK TRICKS INDIA — Stylish Bot Panel</title>
   <style>
-    /* Basic reset and smooth fonts */
+    /* Base resets and font */
     * {
       box-sizing: border-box;
       margin: 0;
@@ -45,69 +46,73 @@ HTML = r'''
     }
     html, body {
       height: 100vh;
-      background-color: #000000;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #121417, #242b38);
       color: #e0e0e0;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      font-weight: 600;
       display: flex;
       justify-content: center;
-      align-items: center;
-      padding: 20px;
-      overflow: hidden;
-    }
-    body {
+      align-items: flex-start;
+      padding: 30px 0;
       overflow-y: auto;
     }
     .container {
-      background-color: #121212;
-      border-radius: 12px;
+      background: #1e2233;
+      border-radius: 16px;
       width: 100%;
-      max-width: 1100px;
-      padding: 30px 40px;
-      box-shadow: 0 0 10px #222;
+      max-width: 1200px;
+      box-shadow: 0 10px 30px rgba(10,14,25,0.7);
+      padding: 40px 50px;
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
     }
     h1 {
-      font-size: 2.8rem;
-      margin-bottom: 15px;
-      color: #f5f5f5;
+      font-size: 3rem;
+      font-weight: 700;
       text-align: center;
+      color: #f0f0f0;
+      margin-bottom: 5px;
+      user-select:none;
     }
     p.lead {
       text-align: center;
-      font-size: 1.1rem;
-      margin-bottom: 30px;
-      color: #bbb;
+      font-size: 1.15rem;
+      color: #bbc6df;
+      user-select:none;
     }
     form {
       display: flex;
       flex-direction: column;
-      gap: 25px;
+      gap: 30px;
     }
     label {
       font-size: 1.1rem;
-      margin-bottom: 6px;
-      color: #ccc;
+      font-weight: 600;
+      margin-bottom: 8px;
       display: block;
     }
     textarea, input[type=text], input[type=color], input[type=file] {
       width: 100%;
-      border-radius: 8px;
-      padding: 18px 20px;
+      border-radius: 10px;
+      padding: 18px 22px;
       font-size: 1.2rem;
-      background-color: #222222;
-      border: 1.5px solid #444444;
-      color: #f0f0f0;
+      background: white;
+      border: none;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+      font-weight: 600;
+      color: #111;
+      font-family: monospace, monospace;
       resize: vertical;
-      font-family: monospace, Consolas, monospace;
-      transition: border-color 0.3s ease;
+      transition: box-shadow 0.3s ease, background 0.3s ease;
+      user-select: text;
     }
     textarea {
-      min-height: 220px;
+      min-height: 260px;
     }
     textarea:focus, input:focus {
       outline: none;
-      border-color: #007acc;
-      background-color: #1a1a1a;
+      background: #e9f0ff;
+      box-shadow: 0 0 10px #3f83f8;
     }
     .row {
       display: flex;
@@ -116,158 +121,190 @@ HTML = r'''
     }
     .row > * {
       flex: 1;
-      min-width: 150px;
+      min-width: 200px;
     }
     .buttons-row {
       display: flex;
       gap: 20px;
-      justify-content: center;
       flex-wrap: wrap;
-      margin-top: 10px;
+      justify-content: center;
+      margin-top: 15px;
     }
     button, a.button-link {
+      flex: 1 1 190px;
       font-weight: 700;
       font-size: 1.3rem;
       padding: 18px 35px;
-      border-radius: 10px;
-      text-decoration: none;
+      border-radius: 12px;
       cursor: pointer;
       border: none;
       color: #fff;
-      background-color: #007acc;
       transition: background-color 0.3s ease;
-      user-select: none;
-      flex: 1 1 180px;
+      user-select:none;
       text-align: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
     }
     button:disabled {
-      background-color: #444;
+      background-color: #888;
       cursor: not-allowed;
+      box-shadow: none;
     }
-    button:hover:not(:disabled), a.button-link:hover {
-      background-color: #005a9e;
+    .save-btn {
+      background-color: #0077ff;
+      box-shadow: 0 0 18px #3399ff;
+    }
+    .save-btn:hover:not(:disabled) {
+      background-color: #005fcc;
+      box-shadow: 0 0 28px #0066ff;
+    }
+    .start-btn {
+      background-color: #2ca02c;
+      box-shadow: 0 0 18px #48d048;
+    }
+    .start-btn:hover:not(:disabled) {
+      background-color: #238423;
+      box-shadow: 0 0 28px #2ecc40;
+    }
+    .stop-btn {
+      background-color: #d93a3a;
+      box-shadow: 0 0 18px #e06060;
+    }
+    .stop-btn:hover:not(:disabled) {
+      background-color: #b63131;
+      box-shadow: 0 0 28px #ff5252;
     }
     a.button-link {
-      background-color: #444444;
+      background-color: #444;
+      box-shadow: 0 0 18px #666;
+      color: #eee;
+      text-decoration: none;
+      display: inline-block;
+      vertical-align: middle;
     }
-    /* Status and log area */
+    a.button-link:hover {
+      background-color: #666;
+      box-shadow: 0 0 28px #777;
+    }
+    /* Status and logs */
     .status-section {
-      background-color: #1f1f1f;
-      border-radius: 12px;
-      padding: 20px;
-      margin-top: 35px;
-      height: 320px;
+      background: #2b3049;
+      border-radius: 14px;
+      padding: 25px 30px;
       display: flex;
       flex-direction: column;
+      gap: 15px;
+      height: 320px;
+      color: #d8dcff;
+      font-weight: 600;
+      box-shadow: inset 0 0 15px rgba(80,100,160,0.3);
     }
     #bot_status {
-      font-size: 1.7rem;
-      font-weight: 700;
-      color: #33cc33;
-      margin-bottom: 17px;
-      user-select:none;
+      font-size: 1.8rem;
+    }
+    #bot_status.running {
+      color: #55cc55;
     }
     #bot_status.stopped {
-      color: #cc3333;
+      color: #cc5555;
     }
     #log_console {
       flex-grow: 1;
-      background-color: #121212;
+      background: #e8ebf8;
+      color: #222;
       border-radius: 10px;
-      padding: 15px;
+      padding: 10px 15px;
       font-family: monospace;
       font-size: 1rem;
-      color: #d0d0d0;
-      overflow-y: auto;
+      overflow-y: scroll;
       white-space: pre-wrap;
       user-select: text;
-      border: 1px solid #333;
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.1);
     }
     /* Responsive */
-    @media (max-width: 920px) {
+    @media (max-width: 940px) {
       .container {
-        padding: 25px 30px;
+        padding: 30px 35px;
       }
       h1 {
-        font-size: 2.2rem;
+        font-size: 2.4rem;
       }
       textarea, input[type=text], input[type=color], input[type=file] {
         font-size: 1rem;
-        padding: 14px 16px;
+        padding: 14px 18px;
       }
       button, a.button-link {
         font-size: 1.1rem;
-        padding: 14px 25px;
+        padding: 16px 25px;
       }
       #bot_status {
-        font-size: 1.3rem;
+        font-size: 1.4rem;
       }
       .status-section {
-        height: 280px;
+        height: 270px;
       }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>YK TRICKS INDIA — BOT CONTROL PANEL</h1>
-    <p class="lead">Paste fbstate.json or upload it. Configure your bot and control start/stop. View live logs & status.</p>
+    <h1>YK TRICKS INDIA — Stylish Bot Panel</h1>
+    <p class="lead">Paste or upload fbstate.json. Configure your bot. Use Start/Stop buttons and watch live logs & status.</p>
 
     <form method="post" action="/save" enctype="multipart/form-data" autocomplete="off">
-      <label for="fbstate">Paste fbstate.json content</label>
-      <textarea id="fbstate" name="fbstate" placeholder="Paste your fbstate.json content here..."></textarea>
+      <label for="fbstate">Paste fbstate.json (text area)</label>
+      <textarea name="fbstate" id="fbstate" placeholder="Paste your fbstate.json content here..."></textarea>
 
       <label for="file">Or upload fbstate.json file</label>
-      <input type="file" id="file" name="file" accept="application/json">
+      <input type="file" id="file" name="file" accept="application/json" />
 
       <div class="row">
         <div>
           <label for="admin_id">Admin ID</label>
-          <input type="text" id="admin_id" name="admin_id" placeholder="Enter Admin User ID" autocomplete="off" />
+          <input type="text" name="admin_id" id="admin_id" placeholder="Enter Admin User ID" />
         </div>
         <div>
           <label for="prefix">Command Prefix</label>
-          <input type="text" id="prefix" name="prefix" placeholder="/" value="/" autocomplete="off" />
+          <input type="text" name="prefix" id="prefix" placeholder="/" value="/" />
         </div>
       </div>
 
       <label for="thread_id">Group Thread ID</label>
-      <input type="text" id="thread_id" name="thread_id" placeholder="Group / Thread ID" autocomplete="off" />
+      <input type="text" name="thread_id" id="thread_id" placeholder="Group or Thread ID" />
 
       <div class="row">
         <div>
-          <label for="color_picker">Pick Neon Color</label>
-          <input type="color" id="color_picker" value="#00ff88" />
+          <label for="color_picker">Neon Color Picker</label>
+          <input type="color" id="color_picker" value="#00aaee" />
         </div>
         <div>
-          <label for="neon_color">Neon Color HEX</label>
-          <input type="text" id="neon_color" name="neon_color" value="#00ff88" placeholder="#00ff88" autocomplete="off" />
+          <label for="neon_color">Neon Color HEX Code</label>
+          <input type="text" name="neon_color" id="neon_color" value="#00aaee" placeholder="#00aaee" />
         </div>
       </div>
 
       <div class="buttons-row">
-        <button type="submit" id="save_btn">Save Config</button>
-        <button type="button" id="start_btn" style="background-color:#228822;">Start Bot</button>
-        <button type="button" id="stop_btn" disabled style="background-color:#882222;">Stop Bot</button>
-        <a href="/files" target="_blank" class="button-link">View Files</a>
+        <button type="submit" class="save-btn">Save Config</button>
+        <button type="button" id="start_btn" class="start-btn">Start Bot</button>
+        <button type="button" id="stop_btn" class="stop-btn" disabled>Stop Bot</button>
+        <a href="/files" class="button-link" target="_blank">View Files</a>
       </div>
     </form>
 
     <div class="status-section">
       <div id="bot_status" class="stopped">Status: Stopped</div>
-      <textarea id="log_console" readonly>Console logs will appear here... Waiting for bot to start.</textarea>
+      <textarea id="log_console" readonly>Console logs will appear here… Waiting for bot start.</textarea>
     </div>
   </div>
 
   <script>
-    const colorPicker = document.getElementById('color_picker');
-    const neonColor = document.getElementById('neon_color');
-    colorPicker.addEventListener('input', e => {
-      neonColor.value = e.target.value;
+    const colorInput = document.getElementById('color_picker');
+    const colorHexInput = document.getElementById('neon_color');
+    colorInput.addEventListener('input', () => {
+      colorHexInput.value = colorInput.value;
     });
-    neonColor.addEventListener('input', e => {
-      if(/^#[0-9a-f]{6}$/i.test(e.target.value)) {
-        colorPicker.value = e.target.value;
+    colorHexInput.addEventListener('input', () => {
+      if(/^#[0-9a-fA-F]{6}$/.test(colorHexInput.value)) {
+        colorInput.value = colorHexInput.value;
       }
     });
 
@@ -276,44 +313,47 @@ HTML = r'''
     const statusDiv = document.getElementById('bot_status');
     const logConsole = document.getElementById('log_console');
 
-    function setStatus(running) {
-      if(running) {
-        statusDiv.textContent = 'Status: Running';
+    function updateStatus(running) {
+      if (running) {
+        statusDiv.textContent = "Status: Running";
         statusDiv.classList.remove('stopped');
+        statusDiv.classList.add('running');
         startBtn.disabled = true;
         stopBtn.disabled = false;
       } else {
-        statusDiv.textContent = 'Status: Stopped';
+        statusDiv.textContent = "Status: Stopped";
         statusDiv.classList.add('stopped');
+        statusDiv.classList.remove('running');
         startBtn.disabled = false;
         stopBtn.disabled = true;
       }
     }
 
-    async function fetchStatus() {
+    async function refreshStatus() {
       try {
-        const resp = await fetch('/bot_status');
-        if(resp.ok) {
-          const data = await resp.json();
-          setStatus(data.running);
-          logConsole.value = data.logs.join('
-');
+        const res = await fetch('/bot_status');
+        if(res.ok) {
+          const data = await res.json();
+          updateStatus(data.running);
+          logConsole.value = data.logs.join("
+");
           logConsole.scrollTop = logConsole.scrollHeight;
         }
-      } catch(e){}
+      } catch {}
     }
 
     startBtn.onclick = async () => {
       await fetch('/bot_start', {method: 'POST'});
-      fetchStatus();
-    };
-    stopBtn.onclick = async () => {
-      await fetch('/bot_stop', {method: 'POST'});
-      fetchStatus();
+      refreshStatus();
     };
 
-    setInterval(fetchStatus, 3000);
-    fetchStatus();
+    stopBtn.onclick = async () => {
+      await fetch('/bot_stop', {method: 'POST'});
+      refreshStatus();
+    };
+
+    setInterval(refreshStatus, 3000);
+    refreshStatus();
   </script>
 </body>
 </html>
@@ -332,7 +372,7 @@ def save():
     admin_id = request.form.get('admin_id', '').strip()
     prefix = request.form.get('prefix', '/').strip()
     thread_id = request.form.get('thread_id', '').strip()
-    neon_color = request.form.get('neon_color', '#00ff88').strip()
+    neon_color = request.form.get('neon_color', '#00aaee').strip()
 
     file = request.files.get('file')
     if file and file.filename and allowed_file(file.filename):
