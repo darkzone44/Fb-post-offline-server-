@@ -9,10 +9,10 @@ def clear():
     os.system('clear')
 
 def banner():
-    print("\u001B[1;32m=============================================
-   FACEBOOK API LOGIN TOOL (100% WORKING)
-   (Get EAAAA Token & Cookies via API)
-=============================================\u001B[0m")
+    print("\u001B[1;32m=============================================\u001B[0m")
+    print("   FACEBOOK API LOGIN TOOL (100% WORKING)")
+    print("   (Get EAAAA Token & Cookies via API)")
+    print("\u001B[1;32m=============================================\u001B[0m")
 
 def convert_cookie_to_string(session_cookies):
     cookie_str = ""
@@ -93,11 +93,9 @@ Cookie: " + cookies)
             
             reason = error_msg
             if "checkpoint" in error_msg.lower():
-                reason = "Account Checkpoint par chala gaya hai.
-App ya Browser mein login karke verify karein."
+                reason = "Account Checkpoint par chala gaya hai. App ya Browser mein login karke verify karein."
             elif "SMS" in str(error_data):
-                reason = "2-Factor Authentication lagi hui hai.
-Yeh tool 2FA bypass nahi kar sakta."
+                reason = "2-Factor Authentication lagi hui hai. Yeh tool 2FA bypass nahi kar sakta."
             else:
                 reason = error_msg
                 
