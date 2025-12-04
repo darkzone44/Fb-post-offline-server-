@@ -1,32 +1,6 @@
-# app.py
-# Render-ready Flask UI that provides big neon-styled input boxes for:
-# - Pasting or uploading fbstate.json (or "apostate.json" as user wrote)
-# - Admin ID
-# - Command prefix
-# - Group chat (thread) ID
-# - Neon color picker and large layout
-#
-# Behavior:
-# - Saves uploaded/pasted fbstate JSON to `fbstate.json` in the working directory
-# - Saves configuration to `config.json` (admin_id, prefix, thread_id, neon_color)
-# - Shows success message and provides a button to view/download saved files
-# - Designed to be dropped into your bot project folder. Your bot should read fbstate.json and config.json.
-#
-# Files to add alongside this file for Render:
-# requirements.txt content (create file):
-# Flask==2.3.2
-# gunicorn==20.1.0
-#
-# Procfile (create file):
-# web: gunicorn app:app --bind 0.0.0.0:$PORT
-#
-# How to use:
-# 1) Put this app.py inside your bot project root (next to your bot code).
-# 2) Deploy to Render as a Web Service (Python). Render will run the Procfile by default.
-# 3) In your bot code, load `fbstate.json` and `config.json` from the working directory.
-#
-# NOTE: This UI intentionally DOES NOT start or run your bot process. It only writes the files your
-# bot expects. Keep your bot code as-is; it should read fbstate.json and config.json when starting.
+# app.py - ULTIMATE NEON GAMING PANEL 🔥💎
+# Render-ready Flask UI with MASSIVE layout, NEON animations, PREMIUM gaming look
+# Deploy karo Render pe - sab kuch bada choda, neon glow, animations full on!
 
 from flask import Flask, request, jsonify, render_template_string, send_from_directory, redirect, url_for
 from werkzeug.utils import secure_filename
@@ -34,7 +8,7 @@ import os
 import json
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # 8 MB limit for upload
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB limit
 UPLOAD_FOLDER = os.path.abspath('.')
 ALLOWED_EXTENSIONS = {'json'}
 
@@ -44,192 +18,421 @@ HTML = r'''
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bot Controller — Paste fbstate.json</title>
+  <title>🚀 YK TRICKS INDIA — ULTIMATE BOT PANEL 🔥</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@400;600;800&display=swap" rel="stylesheet">
   <style>
-    /* Basic reset */
+    :root {
+      --neon-primary: #00ff88;
+      --neon-secondary: #ff00ff;
+      --neon-blue: #00ddff;
+      --neon-purple: #ff44ff;
+      --neon-glow: 0 0 40px var(--neon-primary), 0 0 80px var(--neon-primary), 0 0 120px var(--neon-primary);
+      --bg-glow: 0 0 60px rgba(0,255,136,0.3);
+    }
+
     *{box-sizing:border-box;margin:0;padding:0}
-    html,body{height:100%}
-    body{font-family:Inter,system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#06060a; color:#e6eef8; display:flex; align-items:center; justify-content:center; padding:30px}
+    html,body{height:100vh;overflow:hidden}
+    body{
+      font-family:'Orbitron', monospace;
+      background: radial-gradient(ellipse at center, #0a0a1a 0%, #000000 70%);
+      color:#00ff88;
+      position:relative;
+      overflow:hidden;
+      animation: bgPulse 8s ease-in-out infinite alternate;
+    }
 
-    /* Big container */
-    .wrap{width:100%;max-width:1100px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:18px; padding:36px; box-shadow:0 12px 40px rgba(0,0,0,0.7); border:1px solid rgba(255,255,255,0.03)}
+    /* EPIC BACKGROUND ANIMATIONS */
+    body::before {
+      content:'';
+      position:fixed;
+      top:0;left:0;right:0;bottom:0;
+      background: 
+        radial-gradient(circle at 20% 80%, rgba(120,119,198,0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(255,119,198,0.3) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(120,219,255,0.2) 0%, transparent 50%);
+      animation: rotate 20s linear infinite;
+      z-index:0;
+    }
 
-    h1{font-size:34px;margin-bottom:8px; letter-spacing:1px}
-    p.lead{margin-bottom:20px; color:#bcd3ff}
+    body::after {
+      content:'';
+      position:fixed;
+      inset:0;
+      background-image:
+        linear-gradient(90deg, transparent 49%, rgba(255,255,255,0.013) 50%, transparent 51%),
+        linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, transparent 49%, rgba(0,255,136,0.03) 50%, transparent 51%);
+      background-size: 60px 60px, 60px 60px, 30px 30px;
+      animation: gridMove 60s linear infinite;
+      z-index:0;
+    }
 
-    .grid{display:grid;grid-template-columns:1fr 420px;gap:24px}
+    @keyframes bgPulse {
+      0%,100%{filter: brightness(1) contrast(1);}
+      50%{filter: brightness(1.1) contrast(1.2);}
+    }
+    @keyframes rotate {to{transform:rotate(360deg);}}
+    @keyframes gridMove {0%{transform:translateX(0) translateY(0);} 100%{transform:translateX(-60px) translateY(-60px);}}
+    @keyframes neonPulse {0%,100%{text-shadow:var(--neon-glow);} 50%{text-shadow:0 0 60px var(--neon-primary),0 0 120px var(--neon-primary),0 0 180px var(--neon-primary), inset 0 0 40px var(--neon-primary);}}
+    @keyframes float {0%,100%{transform:translateY(0px);} 50%{transform:translateY(-15px);}}
+    @keyframes glowPulse {0%,100%{box-shadow:var(--neon-glow);} 50%{box-shadow:0 0 60px var(--neon-primary),0 0 120px var(--neon-primary),0 0 200px var(--neon-primary);}}
+    @keyframes scanline {0%{opacity:0.1;} 50%{opacity:0.4;} 100%{opacity:0.1;}}
 
-    /* Left column - main form */
-    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding:22px; border-radius:12px; border:1px solid rgba(255,255,255,0.02)}
+    /* MAIN CONTAINER - BADA CHODA */
+    .wrap{
+      width:100vw;height:100vh;
+      display:flex;align-items:center;justify-content:center;
+      padding:40px;
+      position:relative;z-index:10;
+      backdrop-filter: blur(20px);
+    }
 
-    label{display:block;font-weight:600;margin-bottom:8px}
-    input[type=text], textarea, select{width:100%;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);background:rgba(0,0,0,0.25);color:inherit;font-size:16px}
-    textarea{min-height:260px;resize:vertical;font-family:monospace}
-    .row{display:flex;gap:12px}
-    .row > *{flex:1}
+    .panel{
+      width:100%;max-width:1400px;height:90vh;
+      background: rgba(10,10,25,0.9);
+      border:2px solid transparent;
+      border-radius:30px;
+      padding:50px;
+      box-shadow: 
+        var(--bg-glow),
+        inset 0 0 100px rgba(0,255,136,0.05),
+        0 0 200px rgba(0,255,136,0.1);
+      border-image: linear-gradient(45deg, var(--neon-primary), var(--neon-secondary), var(--neon-blue)) 1;
+      animation: float 6s ease-in-out infinite, glowPulse 3s ease-in-out infinite alternate;
+      overflow-y:auto;
+    }
 
-    .big-btn{display:inline-block;padding:14px 20px;border-radius:12px;font-weight:700;border:none;cursor:pointer;font-size:16px}
+    /* HEADERS - PREMIUM GAMING STYLE */
+    h1{
+      font-family:'Exo 2', sans-serif;
+      font-size:4.5rem;font-weight:900;
+      text-align:center;
+      background:linear-gradient(45deg, #00ff88, #44ffaa, #00ddff, #ff44ff);
+      background-size:400% 400%;
+      -webkit-background-clip:text;
+      -webkit-text-fill-color:transparent;
+      background-clip:text;
+      margin-bottom:10px;
+      animation: neonPulse 2s ease-in-out infinite alternate, gradientShift 4s ease infinite;
+      text-shadow: var(--neon-glow);
+      letter-spacing:3px;
+    }
 
-    /* Neon effect box */
-    .neon-wrap{padding:18px;border-radius:12px;text-align:center;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));border:1px solid rgba(255,255,255,0.02)}
-    .neon-title{font-size:20px;font-weight:800; margin-bottom:10px}
-    .neon-box{display:inline-block;padding:10px 18px;border-radius:10px; font-weight:800; font-size:18px; box-shadow:0 0 30px var(--neon), inset 0 0 60px rgba(255,255,255,0.02)}
+    h2{font-size:2.2rem;font-weight:800;margin:30px 0 20px;color:#00ff88;text-shadow:0 0 30px currentColor;animation:neonPulse 3s infinite;}
 
-    /* right column preview */
-    .right{position:relative}
-    .preview{padding:14px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005)); border:1px solid rgba(255,255,255,0.02)}
-    .file-list{margin-top:12px}
+    p.lead{
+      font-size:1.3rem;
+      text-align:center;
+      color:#aaffcc;
+      margin-bottom:40px;
+      font-weight:500;
+      text-shadow:0 0 20px rgba(0,255,136,0.5);
+    }
 
-    footer{margin-top:18px;color:#9fb3ff;font-size:14px}
+    /* MASSIVE INPUT BOXES */
+    .input-section{
+      background:rgba(255,255,255,0.03);
+      border:2px solid rgba(0,255,136,0.3);
+      border-radius:25px;
+      padding:35px;
+      margin-bottom:30px;
+      position:relative;
+      overflow:hidden;
+      animation: glowPulse 4s ease-in-out infinite alternate;
+    }
 
-    /* responsive */
-    @media (max-width:980px){.grid{grid-template-columns:1fr}}
+    .input-section::before{
+      content:'';
+      position:absolute;
+      top:-2px;left:-2px;right:-2px;bottom:-2px;
+      background:linear-gradient(45deg, var(--neon-primary), var(--neon-blue), var(--neon-secondary), var(--neon-primary));
+      border-radius:23px;
+      z-index:-1;
+      animation: borderRotate 3s linear infinite;
+    }
 
-    /* subtle animated background lines */
-    .bg-lines{position:absolute;left:-60px;top:-60px;right:-60px;bottom:-60px;background-image:linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px);background-size:40px 40px;opacity:0.08;transform:rotate(8deg);border-radius:20px}
+    @keyframes borderRotate{100%{transform:rotate(360deg);}}
+
+    label{
+      display:block;
+      font-size:1.4rem;
+      font-weight:800;
+      color:#00ff88;
+      margin-bottom:15px;
+      text-shadow:0 0 15px currentColor;
+    }
+
+    /* BADA CHODA INPUTS */
+    input[type="text"], input[type="color"], textarea, select{
+      width:100%;
+      height:80px;
+      padding:0 25px;
+      font-size:1.6rem;
+      font-family:'Orbitron', monospace;
+      font-weight:700;
+      background:linear-gradient(145deg, rgba(0,0,0,0.8), rgba(10,10,25,0.9));
+      border:3px solid transparent;
+      border-radius:20px;
+      color:#00ff88;
+      box-shadow: 
+        inset 0 0 30px rgba(0,255,136,0.1),
+        var(--neon-glow);
+      transition:all 0.3s ease;
+      text-shadow:0 0 10px currentColor;
+    }
+
+    textarea{height:300px !important;resize:vertical;font-size:1.4rem;line-height:1.6;}
+
+    input:focus, textarea:focus, select:focus{
+      outline:none;
+      border-image:linear-gradient(45deg, var(--neon-primary), var(--neon-blue)) 1;
+      box-shadow: 
+        inset 0 0 40px var(--neon-primary),
+        0 0 60px var(--neon-primary),
+        0 0 100px rgba(0,255,136,0.5);
+      transform:scale(1.02);
+    }
+
+    /* EPIC BUTTONS */
+    .mega-btn{
+      display:inline-block;
+      padding:25px 50px;
+      font-size:1.8rem;
+      font-weight:900;
+      font-family:'Exo 2', sans-serif;
+      border:none;
+      border-radius:25px;
+      cursor:pointer;
+      position:relative;
+      overflow:hidden;
+      text-transform:uppercase;
+      letter-spacing:2px;
+      margin:10px;
+      min-width:220px;
+      height:80px;
+      transition:all 0.3s ease;
+    }
+
+    .save-btn{
+      background:linear-gradient(45deg, var(--neon-primary), var(--neon-blue));
+      color:#000;
+      box-shadow:var(--neon-glow);
+      animation:neonPulse 1.5s infinite;
+    }
+
+    .save-btn:hover{
+      transform:translateY(-5px) scale(1.05);
+      box-shadow:0 0 80px var(--neon-primary), 0 0 150px var(--neon-primary);
+    }
+
+    .files-btn{
+      background:rgba(255,255,255,0.1);
+      color:#aaffcc;
+      border:2px solid rgba(0,255,136,0.5);
+    }
+
+    /* NEON PREVIEW SECTION */
+    .neon-preview{
+      background:rgba(0,0,0,0.7);
+      border:3px solid transparent;
+      border-radius:25px;
+      padding:40px;
+      text-align:center;
+      margin:30px 0;
+      position:relative;
+    }
+
+    .neon-display{
+      font-size:6rem;
+      font-weight:900;
+      padding:30px 60px;
+      border-radius:20px;
+      display:inline-block;
+      margin:20px 0;
+      font-family:'Exo 2', sans-serif;
+      text-shadow:var(--neon-glow);
+      animation:neonPulse 2s infinite;
+      background:rgba(255,255,255,0.05);
+      border:2px solid rgba(0,255,136,0.3);
+    }
+
+    /* STATUS */
+    .status-box{
+      padding:25px;
+      border-radius:20px;
+      text-align:center;
+      font-size:1.5rem;
+      font-weight:700;
+      margin:20px 0;
+    }
+
+    .status-ready{background:linear-gradient(45deg, #00ff88, #44ffaa); color:#000; animation:glowPulse 2s infinite;}
+    .status-idle{background:rgba(255,255,255,0.1); color:#aaffcc; border:2px solid rgba(0,255,136,0.3);}
+
+    /* FILE SECTION */
+    .files-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin:40px 0;}
+    .file-card{background:rgba(255,255,255,0.03);padding:30px;border-radius:20px;border:2px solid rgba(0,255,136,0.2);position:relative;overflow:hidden;}
+    .file-card::before{content:'';position:absolute;inset:0;background:linear-gradient(45deg,transparent, rgba(0,255,136,0.05),transparent);animation:borderRotate 4s linear infinite;}
+
+    /* RESPONSIVE */
+    @media (max-width:1200px){
+      .panel{padding:30px;}
+      h1{font-size:3.5rem;}
+      input,textarea{height:70px;font-size:1.4rem;}
+    }
+    @media (max-width:768px){
+      .panel{padding:20px;height:95vh;}
+      h1{font-size:2.8rem;}
+      .files-grid{grid-template-columns:1fr;}
+      input,textarea{height:65px;}
+      .mega-btn{padding:20px 30px;font-size:1.4rem;}
+    }
+
+    /* SCANLINES EFFECT */
+    .scanline{position:fixed;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent, #00ff88,transparent);animation:scanline 3s linear infinite;z-index:100;}
   </style>
 </head>
 <body>
+  <div class="scanline"></div>
+  
   <div class="wrap">
-    <div class="grid">
-      <div>
-        <h1>YK TRICKS INDIA — Bot Control Panel</h1>
-        <p class="lead">Paste your fbstate.json (or upload), set admin ID, command prefix & group thread ID. Click Save to write files your bot can read.</p>
+    <div class="panel">
+      <h1>🚀 YK TRICKS 🔥</h1>
+      <p class="lead">ULTIMATE BOT CONTROL PANEL — Paste fbstate.json & Configure like PRO GAMER 💎⚡</p>
 
-        <div class="card">
-          <form method="post" action="/save" enctype="multipart/form-data">
-            <label for="fbstate">Paste fbstate.json (or upload file below)</label>
-            <textarea id="fbstate" name="fbstate" placeholder='Paste fbstate.json content here (large textarea)'></textarea>
-
-            <label for="file" style="margin-top:12px">Or upload fbstate.json file</label>
-            <input type="file" id="file" name="file" accept="application/json">
-
-            <div style="height:12px"></div>
-
-            <label>Admin ID</label>
-            <input type="text" name="admin_id" placeholder="Admin user ID (numeric)">
-
-            <label style="margin-top:12px">Command prefix</label>
-            <input type="text" name="prefix" placeholder="e.g. / or ! or ." value="/">
-
-            <label style="margin-top:12px">Group Thread ID</label>
-            <input type="text" name="thread_id" placeholder="Thread ID where bot will run">
-
-            <label style="margin-top:12px">Neon color (choose)</label>
-            <div class="row">
-              <input type="text" id="neon_color" name="neon_color" placeholder="#00ff99 or "" for default" value="#00ff99">
-              <input type="color" id="color_picker" value="#00ff99" oninput="document.getElementById('neon_color').value=this.value">
-            </div>
-
-            <div style="height:18px"></div>
-
-            <button class="big-btn" style="background:linear-gradient(90deg,var(--neon),#6f9cff); color:black;" type="submit">Save configuration</button>
-            <a href="/files" class="big-btn" style="margin-left:10px;background:transparent;color:#a9d3ff;border:1px solid rgba(255,255,255,0.06);">View files</a>
-          </form>
-
-          <div style="margin-top:18px;display:flex;gap:12px;align-items:center">
-            <div class="neon-wrap" style="flex:1">
-              <div class="neon-title">Live Preview</div>
-              <div class="neon-box" id="neon_preview">Neon: <span id="neon_text">/</span></div>
-            </div>
-            <div style="width:120px;text-align:center;color:#bcd3ff">Status<br><strong id="status">Idle</strong></div>
-          </div>
-
+      <form method="post" action="/save" enctype="multipart/form-data" style="max-width:100%;">
+        
+        <!-- FBSTATE SECTION -->
+        <div class="input-section">
+          <h2>📁 FBSTATE.json</h2>
+          <label>PASTE fbstate.json CONTENT (or upload file)</label>
+          <textarea name="fbstate" placeholder="Paste your complete fbstate.json here... (Ctrl+V)" id="fbstate"></textarea>
+          <label style="margin-top:20px;">OR UPLOAD FILE</label>
+          <input type="file" name="file" accept=".json" style="height:80px;font-size:1.6rem;">
         </div>
 
-        <footer>Tip: Deploy this file with your bot project. Bot must read <code>fbstate.json</code> and <code>config.json</code>.</footer>
-      </div>
-
-      <div class="right">
-        <div class="bg-lines"></div>
-        <div class="preview card">
-          <h3 style="margin-bottom:8px">Saved files</h3>
-          <div class="file-list">
-            <ul id="files_ul">
-              <!-- Filled by server -->
-            </ul>
+        <!-- CONFIG SECTION -->
+        <div class="input-section">
+          <h2>⚙️ BOT CONFIG</h2>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:25px;">
+            <div>
+              <label>👑 ADMIN ID</label>
+              <input type="text" name="admin_id" placeholder="Enter Admin User ID">
+            </div>
+            <div>
+              <label>✨ COMMAND PREFIX</label>
+              <input type="text" name="prefix" placeholder="/" value="/">
+            </div>
           </div>
 
-          <div style="margin-top:14px">
-            <a href="/download/fbstate.json" class="big-btn" style="background:#ffffff11">Download fbstate.json</a>
-            <a href="/download/config.json" class="big-btn" style="margin-left:8px;background:#ffffff11">Download config.json</a>
+          <div style="margin-top:25px;">
+            <label>🆔 GROUP THREAD ID</label>
+            <input type="text" name="thread_id" placeholder="Enter Group/Thread ID">
           </div>
 
-          <div style="margin-top:18px;color:#9fb3ff">Want more UI changes? Tell me the exact color or animation and I'll update.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:25px;margin-top:25px;">
+            <div>
+              <label>🌈 NEON COLOR</label>
+              <input type="color" id="color_picker" value="#00ff88" style="height:80px;width:100%;">
+            </div>
+            <div>
+              <label>HEX CODE</label>
+              <input type="text" id="neon_color" name="neon_color" value="#00ff88" placeholder="#00ff88">
+            </div>
+          </div>
         </div>
+
+        <!-- ACTION BUTTONS -->
+        <div style="text-align:center;margin:40px 0;">
+          <button class="mega-btn save-btn" type="submit">💾 SAVE CONFIGURATION</button>
+          <a href="/files" class="mega-btn files-btn">📂 VIEW FILES</a>
+        </div>
+
+        <!-- LIVE NEON PREVIEW -->
+        <div class="neon-preview">
+          <h3 style="font-size:2rem;margin-bottom:20px;">⚡ LIVE NEON PREVIEW</h3>
+          <div class="neon-display" id="neon_preview">/</div>
+          <div class="status-box status-idle" id="status_box">
+            STATUS: <strong id="status">READY TO ROCK 🔥</strong>
+          </div>
+        </div>
+
+      </form>
+
+      <!-- FOOTER -->
+      <div style="text-align:center;padding:30px 0;color:#66cc99;font-size:1.1rem;border-top:1px solid rgba(0,255,136,0.2);">
+        💎 Deploy on Render | Bot reads <code>fbstate.json</code> + <code>config.json</code> | PRO GAMING SETUP ✅
       </div>
     </div>
   </div>
 
   <script>
-    // live neon color wiring
-    function setNeon(color){
-      document.documentElement.style.setProperty('--neon', color);
-      document.getElementById('neon_preview').style.boxShadow = '0 0 25px '+color+', inset 0 0 50px rgba(255,255,255,0.02)';
+    // LIVE NEON COLOR UPDATER
+    function updateNeon(color) {
+      document.documentElement.style.setProperty('--neon-primary', color);
+      const preview = document.getElementById('neon_preview');
+      preview.style.textShadow = `0 0 40px ${color}, 0 0 80px ${color}, 0 0 120px ${color}`;
+      preview.style.boxShadow = `0 0 60px ${color}, inset 0 0 50px ${color}`;
     }
-    document.getElementById('color_picker').addEventListener('input', function(e){ setNeon(e.target.value); document.getElementById('neon_text').innerText = document.getElementById('prefix')?.value || document.querySelector('input[name=prefix]')?.value || '/'; });
 
-    // fill file list from server
-    fetch('/list').then(r=>r.json()).then(j=>{
-      const ul = document.getElementById('files_ul');
-      ul.innerHTML='';
-      (j.files||[]).forEach(f=>{ const li=document.createElement('li'); li.innerText=f; ul.appendChild(li); })
-    })
+    // COLOR PICKER
+    document.getElementById('color_picker').addEventListener('input', function(e) {
+      const color = e.target.value;
+      document.getElementById('neon_color').value = color;
+      updateNeon(color);
+    });
 
-    // preview prefix
-    const prefixInput = document.querySelector('input[name=prefix]');
-    if(prefixInput){ prefixInput.addEventListener('input', ()=>{ document.getElementById('neon_text').innerText = prefixInput.value || '/'; }) }
+    // PREFIX PREVIEW
+    const prefixInput = document.querySelector('input[name="prefix"]');
+    prefixInput?.addEventListener('input', function() {
+      document.getElementById('neon_preview').textContent = this.value || '/';
+    });
 
-    // initialize neon
-    setNeon(document.getElementById('color_picker').value);
+    // FBSTATE LOADED STATUS
+    document.getElementById('fbstate')?.addEventListener('input', function() {
+      if(this.value.length > 50) {
+        document.getElementById('status').textContent = 'FBSTATE LOADED ✅';
+        document.getElementById('status_box').className = 'status-box status-ready';
+      }
+    });
+
+    // INIT
+    updateNeon('#00ff88');
   </script>
 </body>
 </html>
 '''
 
-
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 @app.route('/')
 def index():
     return render_template_string(HTML)
 
-
 @app.route('/save', methods=['POST'])
 def save():
-    # Read textarea content
     fbstate_text = request.form.get('fbstate', '').strip()
     admin_id = request.form.get('admin_id', '').strip()
     prefix = request.form.get('prefix', '/').strip()
     thread_id = request.form.get('thread_id', '').strip()
-    neon_color = request.form.get('neon_color', '#00ff99').strip()
+    neon_color = request.form.get('neon_color', '#00ff88').strip()
 
-    # File upload (optional)
     file = request.files.get('file')
-    saved_fbstate_path = None
-
-    # Try save uploaded file first if present
     if file and file.filename and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         dest = os.path.join(UPLOAD_FOLDER, 'fbstate.json')
         file.save(dest)
-        saved_fbstate_path = dest
     elif fbstate_text:
-        # attempt to parse as JSON (best-effort). If invalid, still write it as text.
         try:
             parsed = json.loads(fbstate_text)
             with open(os.path.join(UPLOAD_FOLDER, 'fbstate.json'), 'w', encoding='utf-8') as f:
                 json.dump(parsed, f, indent=2)
-            saved_fbstate_path = os.path.join(UPLOAD_FOLDER, 'fbstate.json')
         except Exception:
-            # write raw text
             with open(os.path.join(UPLOAD_FOLDER, 'fbstate.json'), 'w', encoding='utf-8') as f:
                 f.write(fbstate_text)
-            saved_fbstate_path = os.path.join(UPLOAD_FOLDER, 'fbstate.json')
 
-    # Save config
     config = {
         'admin_id': admin_id,
         'prefix': prefix,
@@ -241,15 +444,13 @@ def save():
 
     return redirect(url_for('index'))
 
-
-@app.route('/list')
-def list_files():
+@app.route('/files')
+def files_page():
     files = []
     for name in ('fbstate.json', 'config.json'):
         if os.path.exists(os.path.join(UPLOAD_FOLDER, name)):
             files.append(name)
     return jsonify({'files': files})
-
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
@@ -257,9 +458,7 @@ def download_file(filename):
     path = os.path.join(UPLOAD_FOLDER, safe)
     if os.path.exists(path):
         return send_from_directory(UPLOAD_FOLDER, safe, as_attachment=True)
-    return ("Not found", 404)
-
+    return ("File not found", 404)
 
 if __name__ == '__main__':
-    # When testing locally
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
