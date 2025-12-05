@@ -27,12 +27,11 @@ def tail_bot_logs():
     global bot_logs
     try:
         if bot_process and bot_process.poll() is None:
-            # Read last 100 lines from bot output
             log_file = 'bot.log'
             if os.path.exists(log_file):
                 with open(log_file, 'r') as f:
                     lines = f.readlines()
-                    bot_logs = lines[-50:]  # last 50 lines
+                    bot_logs = lines[-50:]
     except:
         pass
 
@@ -43,17 +42,13 @@ def start_real_bot():
     if bot_process and bot_process.poll() is None:
         return False
     
-    # Check required files exist
     if not os.path.exists('fbstate.json') or not os.path.exists('config.json'):
         bot_status_data["logs"].append("[ERROR] fbstate.json or config.json missing!")
         return False
     
     try:
-        # Clear previous logs
         open('bot.log', 'w').close()
         
-        # Start your bot (replace with your actual bot command)
-        # Option 1: If you have bot.py file
         bot_process = subprocess.Popen(
             [sys.executable, 'bot.py'],
             stdout=subprocess.PIPE,
@@ -66,7 +61,6 @@ def start_real_bot():
         bot_status_data["pid"] = bot_process.pid
         bot_status_data["logs"].append(f"[{time.strftime('%H:%M:%S')}] 🚀 Bot started (PID: {bot_process.pid})")
         
-        # Log reader thread
         def log_reader():
             global bot_logs
             for line in iter(bot_process.stdout.readline, ''):
@@ -75,7 +69,6 @@ def start_real_bot():
                     bot_logs.pop(0)
         
         threading.Thread(target=log_reader, daemon=True).start()
-        
         return True
         
     except Exception as e:
@@ -290,7 +283,6 @@ def save():
     thread_id = request.form.get('thread_id', '').strip()
     neon_color = request.form.get('neon_color', '#00aaee').strip()
 
-    # Save fbstate.json
     file = request.files.get('file')
     if file and file.filename and allowed_file(file.filename):
         filename = secure_filename(file.filename)
@@ -305,7 +297,6 @@ def save():
             with open('fbstate.json', 'w', encoding='utf-8') as f:
                 f.write(fbstate_text)
 
-    # Save config.json
     config = {'admin_id': admin_id, 'prefix': prefix, 'thread_id': thread_id, 'neon_color': neon_color}
     with open('config.json', 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2)
