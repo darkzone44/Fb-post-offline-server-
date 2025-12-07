@@ -1,350 +1,317 @@
-# app.py - FULL WORKING FB MESSENGER BOT PANEL 
-# Real bot start/stop with fbstate.json + config.json integration
-# Deploy on Render - saves files + runs your actual FB bot!
-
-from flask import Flask, request, jsonify, render_template_string, send_from_directory, redirect, url_for
-from werkzeug.utils import secure_filename
-import os
-import json
+import streamlit as st
+import requests
 import threading
 import time
-import subprocess
-import sys
-import signal
+import random
+import string
+from datetime import datetime
 
-app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
-UPLOAD_FOLDER = os.path.abspath('.')
-ALLOWED_EXTENSIONS = {'json'}
+# Page configuration
+st.set_page_config(
+    page_title="MR WALEED OFFLINE",
+    page_icon="â˜ ï¸",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
-# Bot process management
-bot_process = None
-bot_logs = []
-bot_status_data = {"running": False, "pid": None, "logs": []}
+# Custom CSS
+st.markdown("""
+<style>
+    .main {
+        background-image: url('https://i.ibb.co/TBtHnkzK/62dfe1b3d1a831062d951d680bced0e6.jpg');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    .stApp {
+        background: rgba(0, 0, 0, 0.8);
+    }
+    .title-text {
+        text-align: center;
+        color: white;
+        font-size: 2.5em;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px #000000;
+        animation: glow 1s ease-in-out infinite alternate;
+    }
+    @keyframes glow {
+        from { text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #e60073; }
+        to { text-shadow: 0 0 20px #fff, 0 0 30px #ff4da6, 0 0 40px #ff4da6; }
+    }
+    .success-box {
+        background: rgba(0, 255, 0, 0.2);
+        border: 2px solid #00ff00;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 10px 0;
+        color: #00ff00;
+        text-align: center;
+    }
+    .error-box {
+        background: rgba(255, 0, 0, 0.2);
+        border: 2px solid #ff0000;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 10px 0;
+        color: #ff9900;
+        text-align: center;
+    }
+    .info-box {
+        background: rgba(0, 0, 255, 0.2);
+        border: 2px solid #0000ff;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 10px 0;
+        color: #00ffff;
+        text-align: center;
+    }
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {
+        background: rgba(255, 255, 255, 0.1) !important;
+        color: white !important;
+        border: 2px solid white !important;
+        border-radius: 10px !important;
+    }
+    .stSelectbox div[data-baseweb="select"] {
+        background: rgba(255, 255, 255, 0.1) !important;
+        color: white !important;
+        border: 2px solid white !important;
+        border-radius: 10px !important;
+    }
+    .stFileUploader section {
+        background: rgba(255, 255, 255, 0.1) !important;
+        border: 2px dashed white !important;
+        border-radius: 10px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-def tail_bot_logs():
-    """Read bot logs in real-time"""
-    global bot_logs
-    try:
-        if bot_process and bot_process.poll() is None:
-            log_file = 'bot.log'
-            if os.path.exists(log_file):
-                with open(log_file, 'r') as f:
-                    lines = f.readlines()
-                    bot_logs = lines[-50:]
-    except:
-        pass
+# Headers for requests
+headers = {
+    'Connection': 'keep-alive',
+    'Cache-Control': 'max-age=0',
+    'Upgrade-Insecure-Requests': '1',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.76 Safari/537.36',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 11; TECNO CE7j) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.40 Mobile Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+    'referer': 'www.google.com'
+}
 
-def start_real_bot():
-    """Start your actual FB Messenger bot"""
-    global bot_process, bot_status_data
+# Initialize session state
+if 'tasks' not in st.session_state:
+    st.session_state.tasks = {}
+if 'stop_events' not in st.session_state:
+    st.session_state.stop_events = {}
+if 'active_threads' not in st.session_state:
+    st.session_state.active_threads = {}
+if 'message_log' not in st.session_state:
+    st.session_state.message_log = []
+
+def send_messages(cookies_list, thread_id, mn, time_interval, messages, task_id):
+    """Function to send messages using Facebook cookies"""
+    stop_event = st.session_state.stop_events[task_id]
+    st.session_state.tasks[task_id] = {"status": "Running", "start_time": datetime.now()}
     
-    if bot_process and bot_process.poll() is None:
-        return False
+    message_count = 0
+    while not stop_event.is_set():
+        for message1 in messages:
+            if stop_event.is_set():
+                break
+            for cookie in cookies_list:
+                if stop_event.is_set():
+                    break
+                try:
+                    api_url = f'https://graph.facebook.com/v15.0/t_{thread_id}/'
+                    message = str(mn) + ' ' + message1
+                    
+                    # Create session with cookies
+                    session = requests.Session()
+                    
+                    # Parse cookie string into dictionary
+                    cookie_dict = {}
+                    for c in cookie.strip().split(';'):
+                        if '=' in c:
+                            key, value = c.strip().split('=', 1)
+                            cookie_dict[key] = value
+                    
+                    # Add cookies to session
+                    session.cookies.update(cookie_dict)
+                    session.headers.update(headers)
+                    
+                    parameters = {'message': message}
+                    response = session.post(api_url, data=parameters)
+                    
+                    if response.status_code == 200:
+                        log_message = f"âœ… Message Sent: {message}"
+                        st.session_state.message_log.append(log_message)
+                        message_count += 1
+                    else:
+                        log_message = f"âŒ Failed (Status {response.status_code}): {message}"
+                        st.session_state.message_log.append(log_message)
+                    
+                    # Keep only last 50 messages in log
+                    if len(st.session_state.message_log) > 50:
+                        st.session_state.message_log.pop(0)
+                        
+                    time.sleep(time_interval)
+                except Exception as e:
+                    log_message = f"âš ï¸ Error: {str(e)}"
+                    st.session_state.message_log.append(log_message)
+                    time.sleep(2)
     
-    if not os.path.exists('fbstate.json') or not os.path.exists('config.json'):
-        bot_status_data["logs"].append("[ERROR] fbstate.json or config.json missing!")
-        return False
+    st.session_state.tasks[task_id]["status"] = "Stopped"
+    st.session_state.tasks[task_id]["end_time"] = datetime.now()
+    st.session_state.tasks[task_id]["total_messages"] = message_count
+
+def start_task(cookies_list, thread_id, mn, time_interval, messages):
+    """Start a new message sending task"""
+    task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
     
-    try:
-        open('bot.log', 'w').close()
-        
-        bot_process = subprocess.Popen(
-            [sys.executable, 'bot.py'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            universal_newlines=True,
-            bufsize=1
-        )
-        
-        bot_status_data["running"] = True
-        bot_status_data["pid"] = bot_process.pid
-        bot_status_data["logs"].append(f"[{time.strftime('%H:%M:%S')}] 🚀 Bot started (PID: {bot_process.pid})")
-        
-        def log_reader():
-            global bot_logs
-            for line in iter(bot_process.stdout.readline, ''):
-                bot_logs.append(line.strip())
-                if len(bot_logs) > 100:
-                    bot_logs.pop(0)
-        
-        threading.Thread(target=log_reader, daemon=True).start()
+    # Create stop event for this task
+    st.session_state.stop_events[task_id] = threading.Event()
+    
+    # Start thread
+    thread = threading.Thread(
+        target=send_messages, 
+        args=(cookies_list, thread_id, mn, time_interval, messages, task_id)
+    )
+    thread.daemon = True
+    thread.start()
+    
+    st.session_state.active_threads[task_id] = thread
+    return task_id
+
+def stop_task(task_id):
+    """Stop a running task"""
+    if task_id in st.session_state.stop_events:
+        st.session_state.stop_events[task_id].set()
         return True
-        
-    except Exception as e:
-        bot_status_data["logs"].append(f"[ERROR] Failed to start bot: {str(e)}")
-        return False
+    return False
 
-def stop_real_bot():
-    """Stop the running bot"""
-    global bot_process, bot_status_data
+# Main App
+def main():
+    # Header
+    st.markdown('<div class="title-text">â˜ ï¸â¤ï¸ ðŸ‘‡MR WALEED OFFLINE ðŸ‘‡â¤ï¸â˜ ï¸</div>', unsafe_allow_html=True)
     
-    if bot_process and bot_process.poll() is None:
-        try:
-            bot_process.terminate()
-            bot_process.wait(timeout=5)
-            bot_status_data["logs"].append(f"[{time.strftime('%H:%M:%S')}] ⏹ Bot stopped (PID: {bot_status_data['pid']})")
-        except:
-            bot_process.kill()
-            bot_status_data["logs"].append(f"[{time.strftime('%H:%M:%S')}] 💥 Bot force killed")
+    # Main container
+    with st.container():
+        col1, col2, col3 = st.columns([1, 2, 1])
         
-        bot_status_data["running"] = False
-        bot_status_data["pid"] = None
-        bot_process = None
-
-HTML = r'''
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>YK TRICKS INDIA — REAL FB BOT PANEL</title>
-  <style>
-    * {box-sizing:border-box;margin:0;padding:0;}
-    html, body {
-      height:100vh; background:linear-gradient(135deg, #121417, #242b38);
-      color:#e0e0e0; font-family:'Segoe UI',Tahoma,sans-serif;
-      display:flex;justify-content:center;align-items:flex-start;padding:30px;
-      overflow-y:auto;
-    }
-    .container {
-      background:#1e2233; border-radius:16px; width:100%; max-width:1200px;
-      box-shadow:0 10px 30px rgba(10,14,25,0.7); padding:40px 50px;
-      display:flex;flex-direction:column;gap:30px;
-    }
-    h1 {font-size:3rem;font-weight:700;text-align:center;color:#f0f0f0;margin-bottom:5px;}
-    p.lead {text-align:center;font-size:1.15rem;color:#bbc6df;}
-    form {display:flex;flex-direction:column;gap:30px;}
-    label {font-size:1.1rem;font-weight:600;margin-bottom:8px;display:block;}
-    textarea, input[type=text], input[type=color], input[type=file] {
-      width:100%;border-radius:10px;padding:18px 22px;font-size:1.2rem;
-      background:white;border:none;box-shadow:inset 0 0 10px rgba(0,0,0,0.2);
-      font-weight:600;color:#111;font-family:monospace;resize:vertical;
-      transition:box-shadow 0.3s ease;
-    }
-    textarea {min-height:260px;}
-    textarea:focus, input:focus {outline:none;background:#e9f0ff;box-shadow:0 0 15px #3f83f8;}
-    .row {display:flex;gap:20px;flex-wrap:wrap;}
-    .row>* {flex:1;min-width:200px;}
-    .buttons-row {display:flex;gap:20px;flex-wrap:wrap;justify-content:center;margin-top:15px;}
-    button, a.button-link {
-      flex:1 1 190px;font-weight:700;font-size:1.3rem;padding:18px 35px;
-      border-radius:12px;cursor:pointer;border:none;color:#fff;
-      transition:all 0.3s ease;text-align:center;box-shadow:0 5px 15px rgba(0,0,0,0.2);
-    }
-    button:disabled {background:#888;cursor:not-allowed;box-shadow:none;}
-    .save-btn {background:#0077ff;box-shadow:0 0 18px #3399ff;}
-    .save-btn:hover:not(:disabled) {background:#005fcc;box-shadow:0 0 28px #0066ff;}
-    .start-btn {background:#2ca02c;box-shadow:0 0 18px #48d048;}
-    .start-btn:hover:not(:disabled) {background:#238423;box-shadow:0 0 28px #2ecc40;}
-    .stop-btn {background:#d93a3a;box-shadow:0 0 18px #e06060;}
-    .stop-btn:hover:not(:disabled) {background:#b63131;box-shadow:0 0 28px #ff5252;}
-    a.button-link {background:#444;box-shadow:0 0 18px #666;color:#eee;text-decoration:none;}
-    a.button-link:hover {background:#666;box-shadow:0 0 28px #777;}
-    .status-section {
-      background:#2b3049;border-radius:14px;padding:25px 30px;display:flex;
-      flex-direction:column;gap:15px;height:350px;color:#d8dcff;font-weight:600;
-      box-shadow:inset 0 0 15px rgba(80,100,160,0.3);
-    }
-    #bot_status {font-size:1.8rem;}
-    #bot_status.running {color:#55cc55;}
-    #bot_status.stopped {color:#cc5555;}
-    #log_console {
-      flex-grow:1;background:#e8ebf8;color:#222;border-radius:10px;
-      padding:10px 15px;font-family:monospace;font-size:1rem;overflow-y:scroll;
-      white-space:pre-wrap;box-shadow:inset 0 0 8px rgba(0,0,0,0.1);
-    }
-    .file-status {background:#2a3a4a;border-radius:10px;padding:15px;color:#aaccff;}
-    @media (max-width:940px) {
-      .container {padding:30px 35px;}
-      h1 {font-size:2.4rem;}
-      textarea, input {font-size:1rem;padding:14px 18px;}
-      button, a.button-link {font-size:1.1rem;padding:16px 25px;}
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>🚀 YK TRICKS INDIA — REAL FB BOT</h1>
-    <p class="lead">Upload fbstate.json → Save Config → Start Real Bot → Watch Live Logs</p>
-
-    <form method="post" action="/save" enctype="multipart/form-data">
-      <label>Paste fbstate.json content</label>
-      <textarea name="fbstate" placeholder="Paste complete fbstate.json here..."></textarea>
-
-      <label>Upload fbstate.json file</label>
-      <input type="file" name="file" accept=".json">
-
-      <div class="row">
-        <div><label>Admin ID</label><input type="text" name="admin_id" placeholder="1234567890"></div>
-        <div><label>Command Prefix</label><input type="text" name="prefix" value="/" placeholder="!"></div>
-      </div>
-
-      <label>Group Thread ID</label>
-      <input type="text" name="thread_id" placeholder="123456789012345">
-
-      <div class="row">
-        <div><label>Bot Color</label><input type="color" id="color_picker" value="#00aaee"></div>
-        <div><label>Color HEX</label><input type="text" name="neon_color" id="neon_color" value="#00aaee"></div>
-      </div>
-
-      <div class="buttons-row">
-        <button type="submit" class="save-btn">💾 SAVE CONFIG</button>
-        <button type="button" id="start_btn" class="start-btn">▶️ START BOT</button>
-        <button type="button" id="stop_btn" class="stop-btn" disabled>⏹ STOP BOT</button>
-        <a href="/files" class="button-link" target="_blank">📁 FILES</a>
-      </div>
-    </form>
-
-    <div class="status-section">
-      <div id="bot_status" class="stopped">Status: Stopped</div>
-      <div id="file_status" class="file-status">
-        fbstate.json: <span id="fbstate_check">❌ Missing</span> | 
-        config.json: <span id="config_check">❌ Missing</span>
-      </div>
-      <textarea id="log_console" readonly>Bot logs appear here...
-Save config first, then Start Bot</textarea>
-    </div>
-  </div>
-
-  <script>
-    const colorPicker = document.getElementById('color_picker');
-    const colorHex = document.getElementById('neon_color');
-    colorPicker.oninput = () => colorHex.value = colorPicker.value;
-    colorHex.oninput = () => {
-      if(/^#[0-9a-fA-F]{6}$/i.test(colorHex.value)) colorPicker.value = colorHex.value;
-    };
-
-    const startBtn = document.getElementById('start_btn');
-    const stopBtn = document.getElementById('stop_btn');
-    const statusDiv = document.getElementById('bot_status');
-    const logConsole = document.getElementById('log_console');
-    const fbstateCheck = document.getElementById('fbstate_check');
-    const configCheck = document.getElementById('config_check');
-
-    function updateStatus(running, pid) {
-      if(running) {
-        statusDiv.textContent = `Status: Running (PID: ${pid})`;
-        statusDiv.className = 'running';
-        startBtn.disabled = true;
-        stopBtn.disabled = false;
-      } else {
-        statusDiv.textContent = 'Status: Stopped';
-        statusDiv.className = 'stopped';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-      }
-    }
-
-    async function refreshStatus() {
-      try {
-        const res = await fetch('/status');
-        const data = await res.json();
-        updateStatus(data.running, data.pid);
-        logConsole.value = data.logs.join('
-');
-        logConsole.scrollTop = logConsole.scrollHeight;
-        
-        fbstateCheck.textContent = data.files.fbstate ? '✅ OK' : '❌ Missing';
-        fbstateCheck.style.color = data.files.fbstate ? '#55cc55' : '#cc5555';
-        configCheck.textContent = data.files.config ? '✅ OK' : '❌ Missing';
-        configCheck.style.color = data.files.config ? '#55cc55' : '#cc5555';
-      } catch {}
-    }
-
-    startBtn.onclick = async () => {
-      await fetch('/bot_start', {method:'POST'});
-      refreshStatus();
-    };
-    stopBtn.onclick = async () => {
-      await fetch('/bot_stop', {method:'POST'});
-      refreshStatus();
-    };
-
-    setInterval(refreshStatus, 2000);
-    refreshStatus();
-  </script>
-</body>
-</html>
-'''
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-@app.route('/')
-def index():
-    return render_template_string(HTML)
-
-@app.route('/save', methods=['POST'])
-def save():
-    fbstate_text = request.form.get('fbstate', '').strip()
-    admin_id = request.form.get('admin_id', '').strip()
-    prefix = request.form.get('prefix', '/').strip()
-    thread_id = request.form.get('thread_id', '').strip()
-    neon_color = request.form.get('neon_color', '#00aaee').strip()
-
-    file = request.files.get('file')
-    if file and file.filename and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        dest = os.path.join(UPLOAD_FOLDER, 'fbstate.json')
-        file.save(dest)
-    elif fbstate_text:
-        try:
-            parsed = json.loads(fbstate_text)
-            with open('fbstate.json', 'w', encoding='utf-8') as f:
-                json.dump(parsed, f, indent=2)
-        except:
-            with open('fbstate.json', 'w', encoding='utf-8') as f:
-                f.write(fbstate_text)
-
-    config = {'admin_id': admin_id, 'prefix': prefix, 'thread_id': thread_id, 'neon_color': neon_color}
-    with open('config.json', 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=2)
-
-    return redirect(url_for('index'))
-
-@app.route('/status')
-def get_status():
-    global bot_status_data
-    tail_bot_logs()
-    bot_status_data["logs"] = bot_logs[-50:] + bot_status_data["logs"][-10:]
+        with col2:
+            # Task creation form
+            with st.form("message_form"):
+                st.markdown("### ðŸš€ Start New Task")
+                
+                # Cookie option
+                cookie_option = st.selectbox(
+                    "Select Cookie Option",
+                    ["Single Cookie", "Multiple Cookies"],
+                    help="Choose between single cookie or file with multiple cookies"
+                )
+                
+                if cookie_option == "Single Cookie":
+                    cookie_input = st.text_area(
+                        "ð™€ð™‰ð™ð™€ð™ ð™ð˜¼ð˜¾ð™€ð˜½ð™Šð™Šð™† ð˜¾ð™Šð™Šð™†ð™„ð™€..â¤µï¸",
+                        placeholder="Paste your Facebook cookie here...",
+                        height=100
+                    )
+                    cookies_list = [cookie_input] if cookie_input else []
+                else:
+                    cookie_file = st.file_uploader(
+                        "Upload Cookie File",
+                        type=['txt'],
+                        help="Upload a text file with multiple cookies (one per line)"
+                    )
+                    if cookie_file:
+                        cookies_list = cookie_file.read().decode().strip().splitlines()
+                    else:
+                        cookies_list = []
+                
+                # Other inputs
+                thread_id = st.text_input("ð™€ð™‰ð™ð™€ð™ ð˜¾ð™Šð™‰ð™‘ð™Š ð™ð™„ð˜¿...â¤µï¸", placeholder="Enter conversation UID")
+                kidx = st.text_input("ð™€ð™‰ð™ð™€ð™ ð™ƒð˜¼ð™ð™€ð™ ð™‰ð˜¼ð™ˆð™€...â¤µï¸", placeholder="Enter sender name")
+                time_interval = st.number_input("ð™€ð™‰ð™ð™€ð™ ð™Žð™‹ð™€ð™€ð˜¿...â¤µï¸ (seconds)", min_value=1, value=5)
+                
+                message_file = st.file_uploader(
+                    "ð™€ð™‰ð™ð™€ð™ ð™‚ð˜¼ð™‡ð™„ ð™ð™„ð™‡ð™€..â¤µï¸",
+                    type=['txt'],
+                    help="Upload a text file with messages (one per line)"
+                )
+                
+                # Start button
+                start_button = st.form_submit_button("â˜ ï¸ ð™ð™ð™‰ð™„ð™‰ð™‚ ð™Žð™€ð™ð™‘ð™€ð™ â˜ ï¸")
+                
+                if start_button:
+                    if not cookies_list:
+                        st.error("âŒ Please provide cookies!")
+                    elif not thread_id:
+                        st.error("âŒ Please enter conversation UID!")
+                    elif not kidx:
+                        st.error("âŒ Please enter sender name!")
+                    elif not message_file:
+                        st.error("âŒ Please upload message file!")
+                    else:
+                        messages = message_file.read().decode().splitlines()
+                        task_id = start_task(cookies_list, thread_id, kidx, time_interval, messages)
+                        st.success(f"âœ… Task started with ID: **{task_id}**")
+            
+            # Stop task section
+            st.markdown("---")
+            st.markdown("### ðŸ›‘ Stop Task")
+            stop_col1, stop_col2 = st.columns([3, 1])
+            
+            with stop_col1:
+                stop_task_id = st.text_input("ð™€ð™‰ð™ð™€ð™ ð™Žð™ð™Šð™‹ ð™†ð™€ð™”..â¤µï¸", placeholder="Enter task ID to stop")
+            
+            with stop_col2:
+                stop_button = st.button("â¤ï¸ ð™Žð™ð™Šð™‹ ð™Žð™€ð™ð™‘ð™€ð™ â¤ï¸", type="secondary")
+                
+                if stop_button and stop_task_id:
+                    if stop_task(stop_task_id):
+                        st.success(f"âœ… Task {stop_task_id} stopped successfully!")
+                    else:
+                        st.error(f"âŒ Task {stop_task_id} not found!")
+            
+            # Active tasks display
+            st.markdown("---")
+            st.markdown("### ðŸ“Š Active Tasks")
+            
+            if st.session_state.tasks:
+                for task_id, task_info in st.session_state.tasks.items():
+                    status_color = "ðŸŸ¢" if task_info["status"] == "Running" else "ðŸ”´"
+                    st.write(f"{status_color} **Task ID:** {task_id}")
+                    st.write(f"   **Status:** {task_info['status']}")
+                    st.write(f"   **Started:** {task_info['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    if "total_messages" in task_info:
+                        st.write(f"   **Messages Sent:** {task_info['total_messages']}")
+                    if "end_time" in task_info:
+                        st.write(f"   **Ended:** {task_info['end_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+                    
+                    st.write("---")
+            else:
+                st.info("ðŸ“ No active tasks")
+            
+            # Message log
+            st.markdown("### ðŸ“ Message Log")
+            log_container = st.container()
+            with log_container:
+                for log in reversed(st.session_state.message_log[-10:]):  # Show last 10 messages
+                    st.write(log)
     
-    files = {
-        'fbstate': os.path.exists('fbstate.json'),
-        'config': os.path.exists('config.json')
-    }
+    # Footer
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
     
-    return jsonify({
-        'running': bot_status_data["running"],
-        'pid': bot_status_data["pid"],
-        'logs': bot_status_data["logs"],
-        'files': files
-    })
+    with col1:
+        st.markdown("**â˜ ï¸â£ï¸ðŸ‘‡MR WALEED OFFLINE ðŸ‘‡â£ï¸â˜ ï¸**")
+    
+    with col2:
+        st.markdown("[á´„ÊŸÉªá´„á´‹ Êœá´‡Ê€á´‡ Ò“á´Ê€ Ò“á´€á´„á´‡Ê™á´á´á´‹](https://www.facebook.com/officelwaleed)")
+    
+    with col3:
+        st.markdown("[ðŸ’« ð˜¾ð™ƒð˜¼ð™ ð™Šð™‰ ð™’ð™ƒð˜¼ð™ð™Žð˜¼ð™‹ð™‹ ðŸ’«](https://wa.me/+923150596250)")
 
-@app.route('/bot_start', methods=['POST'])
-def bot_start():
-    if start_real_bot():
-        return jsonify({"status": "started"})
-    return jsonify({"status": "error"}), 400
-
-@app.route('/bot_stop', methods=['POST'])
-def bot_stop():
-    stop_real_bot()
-    return jsonify({"status": "stopped"})
-
-@app.route('/files')
-def files_page():
-    files = [name for name in ('fbstate.json', 'config.json', 'bot.log') 
-             if os.path.exists(os.path.join(UPLOAD_FOLDER, name))]
-    return jsonify({'files': files})
-
-@app.route('/download/<path:filename>')
-def download_file(filename):
-    safe = secure_filename(filename)
-    path = os.path.join(UPLOAD_FOLDER, safe)
-    if os.path.exists(path):
-        return send_from_directory(UPLOAD_FOLDER, safe, as_attachment=True)
-    return ("File not found", 404)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
+if __name__ == "__main__":
+    main()
