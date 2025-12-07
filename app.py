@@ -313,5 +313,5 @@ def main():
     with col3:
         st.markdown("[ðŸ’« ð˜¾ð™ƒð˜¼ð™ ð™Šð™‰ ð™’ð™ƒð˜¼ð™ð™Žð˜¼ð™‹ð™‹ ðŸ’«](https://wa.me/+923150596250)")
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
