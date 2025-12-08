@@ -2,15 +2,17 @@ from flask import Flask, request, jsonify, render_template_string
 import requests
 import uuid
 import os
+import json
 from datetime import datetime
 
 app = Flask(__name__)
+app.secret_key = 'fb-login-tool-2025-super-secure-key'
 
 def convert_cookie_to_string(session_cookies):
     cookie_str = ""
     for cookie in session_cookies:
-        cookie_str += cookie['name'] + "=" + cookie['value'] + ";"
-    return cookie_str
+        cookie_str += cookie['name'] + "=" + cookie['value'] + "; "
+    return cookie_str.strip()
 
 def login_with_api(email, password):
     url = "https://b-graph.facebook.com/auth/login"
@@ -18,23 +20,23 @@ def login_with_api(email, password):
     device_id = str(uuid.uuid4())
     
     payload = {
-        'adid': adid,
-        'email': email,
-        'password': password,
+        'adid': adid, 
+        'email': email, 
+        'password': password, 
         'format': 'json',
-        'device_id': device_id,
-        'cpl': 'true',
+        'device_id': device_id, 
+        'cpl': 'true', 
         'family_device_id': device_id,
-        'locale': 'en_US',
+        'locale': 'en_US', 
         'client_country_code': 'US',
         'credentials_type': 'device_based_login_password',
-        'generate_session_cookies': '1',
+        'generate_session_cookies': '1', 
         'error_detail_type': 'button_with_disabled',
-        'source': 'device_based_login',
+        'source': 'device_based_login', 
         'machine_id': 'string',
-        'meta_inf_fbmeta': '',
+        'meta_inf_fbmeta': '', 
         'advertiser_id': adid,
-        'currently_logged_in_userid': '0',
+        'currently_logged_in_userid': '0', 
         'method': 'auth.login',
         'fb_api_req_friendly_name': 'authenticate',
         'fb_api_caller_class': 'com.facebook.account.login.protocol.Fb4aAuthHandler',
@@ -45,144 +47,141 @@ def login_with_api(email, password):
     headers = {
         'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 10; SM-G960F Build/QP1A.190711.020) [FBAN/Orca-Android;FBAV/241.0.0.17.116;FBPN/com.facebook.orca;FBLC/en_US;FBBV/196328325;FBCR/null;FBMF/samsung;FBBD/samsung;FBDV/SM-G960F;FBSV/10;FBCA/arm64-v8a:null;FBDM/{density=3.0,width=1080,height=2220};FB_FW/1;]',
         'Content-Type': 'application/x-www-form-urlencoded',
-        'X-FB-Connection-Bandwidth': '34267675',
-        'X-FB-Net-HNI': '38692',
-        'X-FB-SIM-HNI': '30005',
-        'X-FB-Connection-Quality': 'EXCELLENT',
-        'X-FB-Connection-Type': 'WIFI',
-        'X-FB-HTTP-Engine': 'Liger',
-        'X-FB-Client-IP': 'True',
-        'X-FB-Server-Cluster': 'True'
+        'Accept': '*/*',
+        'Connection': 'keep-alive'
     }
     
     try:
-        response = requests.post(url, data=payload, headers=headers, timeout=20)
+        response = requests.post(url, data=payload, headers=headers, timeout=30)
         data = response.json()
         
         if 'access_token' in data:
-            token = data['access_token']
-            cookies = ""
-            if 'session_cookies' in data:
-                cookies = convert_cookie_to_string(data['session_cookies'])
-            
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            file_content = "
-=== " + email + " ===
-Token: " + token + "
-Cookies: " + cookies + "
-Time: " + timestamp + "
-
-"
-            with open("fb_pro_data.txt", "a") as f:
-                f.write(file_content)
-            
-            return {
-                'success': True,
-                'token': token,
-                'cookies': cookies,
-                'message': 'LOGIN SUCCESSFUL! EAAAA Token Generated Successfully.'
+            data['success'] = True
+            # Save to file
+            result = {
+                'email': email,
+                'access_token': data.get('access_token'),
+                'cookies': convert_cookie_to_string(data.get('session_cookies', [])),
+                'timestamp': datetime.now().isoformat()
             }
-        elif 'error' in data:
-            error_msg = data['error'].get('message', 'Unknown error')
-            if 'checkpoint' in error_msg.lower():
-                return {'success': False, 'message': 'Account checkpointed. Verify in Facebook app/browser first.', 'type': 'checkpoint'}
-            elif any(x in error_msg.lower() for x in ['sms', '2fa', 'otp']):
-                return {'success': False, 'message': '2FA/OTP enabled on this account. Use normal password account.', 'type': '2fa'}
-            else:
-                return {'success': False, 'message': error_msg, 'type': 'error'}
+            with open('fb_pro_data.txt', 'w') as f:
+                f.write(json.dumps(result, indent=2))
+            data['saved'] = True
+        elif 'errors' in data:
+            data['success'] = False
+            data['type'] = 'auth_error'
         else:
-            return {'success': False, 'message': 'Invalid API response received.', 'type': 'unknown'}
+            data['success'] = False
+            data['type'] = 'unknown'
+            
+        return data
+        
+    except requests.exceptions.Timeout:
+        return {'success': False, 'message': 'Timeout - Slow network', 'type': 'network'}
+    except requests.exceptions.RequestException as e:
+        return {'success': False, 'message': str(e), 'type': 'network'}
+    except json.JSONDecodeError:
+        return {'success': False, 'message': 'Invalid response from Facebook', 'type': 'parse'}
     except Exception as e:
-        return {'success': False, 'message': 'Network error: ' + str(e), 'type': 'network'}
+        return {'success': False, 'message': str(e), 'type': 'unknown'}
 
-HTML_TEMPLATE = """
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    message = ""
+    result = None
+    
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        if not email or not password:
+            message = "Email aur Password dono daalo bhai! 😅"
+        else:
+            result = login_with_api(email, password)
+            if result.get('success'):
+                message = "🎉 SUCCESS! fb_pro_data.txt file mein save ho gaya!"
+            elif result.get('type') == 'network':
+                message = "🌐 Network issue - Internet check karo!"
+            else:
+                message = f"❌ Error: {result.get('message', 'Unknown error')}"
+    
+    HTML_TEMPLATE = '''
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facebook API Login Tool - Working</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <title>FB Login Tool - 100% Working 🔥</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        * {margin:0;padding:0;box-sizing:border-box;}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #333;
+            padding: 20px;
+            color: #e0e0e0;
         }
         .container {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
             width: 100%;
             max-width: 450px;
-            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        .card {
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px 30px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        .logo {
+        h1 {
             text-align: center;
-            margin-bottom: 30px;
-        }
-        .logo i {
-            font-size: 48px;
-            color: #4267B2;
+            color: #fff;
             margin-bottom: 10px;
-        }
-        .logo h1 {
-            font-size: 24px;
             font-weight: 700;
-            color: #333;
-            margin: 0;
+            font-size: 28px;
         }
-        .logo p {
-            color: #666;
+        .subtitle {
+            text-align: center;
+            color: #a0a0a0;
+            margin-bottom: 30px;
             font-size: 14px;
-            margin: 5px 0 0 0;
         }
-        .form-group {
+        .input-group {
             position: relative;
             margin-bottom: 20px;
         }
-        .form-group input {
+        input {
             width: 100%;
-            padding: 15px 20px 15px 45px;
-            border: 2px solid #e1e5e9;
+            padding: 16px 20px 16px 50px;
+            background: rgba(255,255,255,0.08);
+            border: 2px solid rgba(255,255,255,0.1);
             border-radius: 12px;
+            color: #fff;
             font-size: 16px;
             transition: all 0.3s ease;
-            background: #f8f9fa;
         }
-        .form-group input:focus {
+        input:focus {
             outline: none;
-            border-color: #4267B2;
-            box-shadow: 0 0 0 3px rgba(66,103,178,0.1);
-            background: white;
+            border-color: #4267b2;
+            background: rgba(255,255,255,0.12);
+            box-shadow: 0 0 20px rgba(66,103,178,0.3);
         }
-        .form-group i {
+        input::placeholder { color: #888; }
+        .input-icon {
             position: absolute;
             left: 18px;
             top: 50%;
             transform: translateY(-50%);
-            color: #999;
+            color: #888;
             font-size: 18px;
-            transition: 0.3s ease;
-        }
-        .form-group input:focus + i {
-            color: #4267B2;
         }
         .btn {
             width: 100%;
             padding: 16px;
-            background: linear-gradient(135deg, #4267B2, #365899);
+            background: linear-gradient(135deg, #4267b2, #365899);
             color: white;
             border: none;
             border-radius: 12px;
@@ -193,244 +192,119 @@ HTML_TEMPLATE = """
             position: relative;
             overflow: hidden;
         }
-        .btn:hover {
+        .btn:hover { 
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(66,103,178,0.3);
+            box-shadow: 0 10px 25px rgba(66,103,178,0.4);
         }
-        .btn.loading {
-            pointer-events: none;
-            opacity: 0.7;
+        .btn:active { transform: translateY(0); }
+        .message {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 500;
+            text-align: center;
+            animation: slideIn 0.3s ease;
         }
-        .btn.loading:after {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            top: 50%;
-            left: 50%;
-            margin-left: -10px;
-            margin-top: -10px;
-            border: 2px solid transparent;
-            border-top: 2px solid white;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        .result {
-            margin-top: 20px;
+        .success { background: rgba(34,197,94,0.2); border: 1px solid #22c55e; color: #22c55e; }
+        .error { background: rgba(239,68,68,0.2); border: 1px solid #ef4444; color: #ef4444; }
+        .loading { 
+            display: none; 
+            text-align: center; 
             padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            transform: scale(0.8);
-            opacity: 0;
-            transition: all 0.4s ease;
+            color: #60a5fa;
         }
-        .result.show {
-            transform: scale(1);
-            opacity: 1;
+        .spinner {
+            border: 3px solid rgba(96,165,250,0.3);
+            border-top: 3px solid #60a5fa;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
         }
-        .success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        .warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-        .result pre {
-            background: #f8f9fa;
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .file-info {
+            background: rgba(59,130,246,0.1);
+            border: 1px solid rgba(59,130,246,0.3);
             padding: 15px;
-            border-radius: 8px;
-            text-align: left;
-            font-size: 13px;
-            max-height: 200px;
-            overflow: auto;
-            margin-top: 10px;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-        .clear-btn {
-            width: 100%;
-            padding: 12px;
-            margin-top: 15px;
-            background: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: 0.3s ease;
-        }
-        .clear-btn:hover {
-            background: #5a6268;
-        }
-        .note {
-            background: #e7f3ff;
-            border: 1px solid #b3d9ff;
-            border-radius: 8px;
-            padding: 15px;
+            border-radius: 10px;
             margin-top: 20px;
-            font-size: 13px;
-            text-align: center;
-        }
-        @keyframes spin {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg); }
+            font-size: 14px;
         }
         @media (max-width: 480px) {
-            .container { padding: 15px; }
-            .card { padding: 30px 20px; }
+            .container { padding: 30px 20px; margin: 10px; }
+            h1 { font-size: 24px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="card">
-            <div class="logo">
-                <i class="fab fa-facebook-f"></i>
-                <h1>FB API Login Tool</h1>
-                <p>Get EAAAA Token + Cookies</p>
+        <h1><i class="fab fa-facebook"></i> FB Login Tool</h1>
+        <p class="subtitle">Email/Password se Token + Cookies Generate karo 🔥</p>
+        
+        <form method="POST" id="loginForm">
+            <div class="input-group">
+                <i class="fas fa-envelope input-icon"></i>
+                <input type="email" name="email" placeholder="Email ID ya Phone Number" required>
             </div>
-            
-            <div class="form-group">
-                <input type="text" id="email" placeholder="Email / Phone / Username">
-                <i class="fas fa-user"></i>
+            <div class="input-group">
+                <i class="fas fa-lock input-icon"></i>
+                <input type="password" name="password" placeholder="Password" required>
             </div>
-            
-            <div class="form-group">
-                <input type="password" id="password" placeholder="Password">
-                <i class="fas fa-lock"></i>
-            </div>
-            
-            <button class="btn" id="loginBtn">
-                <i class="fas fa-rocket"></i> Generate Token
+            <button type="submit" class="btn" id="submitBtn">
+                <i class="fas fa-rocket"></i> Generate Token & Cookies
             </button>
-            
-            <div id="result" class="result"></div>
-            
-            <button class="clear-btn" id="clearBtn" style="display: none;">
-                <i class="fas fa-trash"></i> Clear Data File
-            </button>
-            
-            <div class="note">
-                <i class="fas fa-exclamation-triangle"></i>
-                <strong>Important:</strong> 2FA/OTP accounts won't work. Use normal password accounts only. Data saves to fb_pro_data.txt
-            </div>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>Facebook se data le rahe hain... Thoda wait karo 🚀</div>
+        </div>
+        
+        {% if message %}
+        <div class="message {{ 'success' if 'SUCCESS' in message else 'error' }}">{{ message }}</div>
+        {% endif %}
+        
+        {% if result and result.success %}
+        <div class="file-info">
+            <i class="fas fa-file-alt"></i> 
+            <strong>fb_pro_data.txt</strong> file ban gayi! 
+            Token + Cookies save ho gaye ✅
+        </div>
+        {% endif %}
+        
+        <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #888;">
+            <p>Local: python app.py → localhost:5000</p>
+            <p>Deploy: Render.com/Heroku ready ✅</p>
         </div>
     </div>
 
     <script>
-        document.getElementById('loginBtn').onclick = async function() {
-            const email = document.getElementById('email').value.trim();
-            const password = document.getElementById('password').value.trim();
-            const btn = document.getElementById('loginBtn');
-            const result = document.getElementById('result');
-            const clearBtn = document.getElementById('clearBtn');
-            
-            if (!email || !password) {
-                showResult('Please enter both email and password!', 'error');
-                return;
-            }
-            
-            btn.classList.add('loading');
-            btn.innerHTML = '';
-            result.classList.remove('show');
-            
-            try {
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({email: email, password: password})
-                });
-                
-                const data = await response.json();
-                
-                btn.classList.remove('loading');
-                btn.innerHTML = '<i class="fas fa-rocket"></i> Generate Token';
-                
-                if (data.success) {
-                    let html = '<strong>' + data.message + '</strong><br><br><strong>Token:</strong><br><pre>' + data.token + '</pre>';
-                    if (data.cookies) {
-                        html += '<br><strong>Cookies:</strong><br><pre>' + data.cookies + '</pre>';
-                    }
-                    showResult(html, 'success');
-                    clearBtn.style.display = 'block';
-                } else {
-                    let type = 'error';
-                    if (data.type === 'checkpoint' || data.type === '2fa') {
-                        type = 'warning';
-                    }
-                    showResult(data.message, type);
-                }
-            } catch (error) {
-                btn.classList.remove('loading');
-                btn.innerHTML = '<i class="fas fa-rocket"></i> Generate Token';
-                showResult('Network error. Please check your connection.', 'error');
-            }
+        document.getElementById('loginForm').onsubmit = function() {
+            document.getElementById('submitBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('submitBtn').disabled = true;
         };
-        
-        function showResult(message, type) {
-            const result = document.getElementById('result');
-            result.innerHTML = message;
-            result.className = 'result show ' + type;
-        }
-        
-        document.getElementById('clearBtn').onclick = async function() {
-            try {
-                await fetch('/api/clear');
-                document.getElementById('result').classList.remove('show');
-                this.style.display = 'none';
-                document.getElementById('email').value = '';
-                document.getElementById('password').value = '';
-                showResult('Data file cleared successfully!', 'success');
-            } catch(e) {
-                showResult('Error clearing data!', 'error');
-            }
-        };
-        
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                document.getElementById('loginBtn').click();
-            }
-        });
-        
-        document.getElementById('email').focus();
     </script>
 </body>
 </html>
-"""
-
-@app.route('/')
-def home():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    data = request.get_json()
-    email = data.get('email', '').strip()
-    password = data.get('password', '').strip()
+    '''
     
-    if not email or not password:
-        return jsonify({'success': False, 'message': 'Email and password are required!', 'type': 'empty'})
-    
-    result = login_with_api(email, password)
-    return jsonify(result)
+    return render_template_string(HTML_TEMPLATE, message=message, result=result)
 
-@app.route('/api/clear')
-def api_clear():
+@app.route('/clear', methods=['POST'])
+def clear_data():
     try:
         if os.path.exists('fb_pro_data.txt'):
             os.remove('fb_pro_data.txt')
-        return jsonify({'success': True, 'message': 'Data cleared successfully!'})
+        return jsonify({'success': True, 'message': 'Data cleared! 🚀'})
     except:
-        return jsonify({'success': False, 'message': 'Failed to clear data!'})
+        return jsonify({'success': False, 'message': 'Clear failed!'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    print("🚀 FB Login Tool starting on port", port)
+    print("📱 Local: http://localhost:" + str(port))
+    print("🌐 Deploy: Render.com ready!")
     app.run(host='0.0.0.0', port=port, debug=False)
